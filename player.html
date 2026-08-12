@@ -11,7 +11,8 @@
        transition:opacity .9s ease;will-change:opacity,transform;backface-visibility:hidden}
   .buf.front{opacity:1}
   .buf iframe{border:0;width:100%;height:100%;display:block;background:#000}
-  .crop iframe{height:calc(100% + var(--crop,0px));margin-top:calc(-1 * var(--crop,0px))}
+  .crop iframe{height:calc(100% + var(--crop,0px)) !important;margin-top:calc(-1 * var(--crop,0px)) !important}
+  .fillw iframe{width:calc(100% + 18px) !important} /* hide PBI's internal scrollbar off-screen */
   #boot{position:fixed;inset:0;z-index:40;display:flex;flex-direction:column;align-items:center;
     justify-content:center;gap:14px;background:radial-gradient(ellipse at center,#12463a 0%,#0a2a22 70%,#061d17 100%);
     color:#dff2e8;font-family:Segoe UI,sans-serif}
@@ -61,7 +62,7 @@ function loadSdk(){ if(powerbiReady) return powerbiReady;
   powerbiReady=new Promise(res=>{const s=document.createElement("script");s.src=C.PBI_SDK;s.onload=res;document.head.appendChild(s);});
   return powerbiReady; }
 
-function resetView(b){ b.el.classList.remove("crop"); b.el.style.removeProperty("--crop"); }
+function resetView(b){ b.el.classList.remove("crop"); b.el.classList.remove("fillw"); b.el.style.removeProperty("--crop"); }
 function cleanBuf(b){
   WARM[b.id]=null; WARMLOADING[b.id]=null; resetView(b);
   if(pbiReports[b.id]){ try{window.powerbi&&powerbi.reset(b.pbi);}catch(e){} delete pbiReports[b.id]; }
@@ -105,6 +106,7 @@ async function embedPbi(b,cmd,onRendered){
   const rep=powerbi.embed(b.pbi,conf);
   pbiReports[b.id]=rep;
   applyCrop(b, cmd.cropTop||0);
+  b.el.classList.toggle("fillw", SETTINGS.fit==="fill");
   rep.on("rendered",()=>onRendered&&onRendered());
   rep.on("error",async ev=>{ console.error("pbi",ev&&ev.detail);
     try{const c2=await tokenConfig(cmd.contentId); rep.setAccessToken(c2.token);}catch(e){}
