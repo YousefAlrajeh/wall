@@ -47,7 +47,7 @@
 </div></div>
 
 <header>
-  <h1>ECC WALL CONSOLE</h1><span class="muted" id="verLabel">v4.0</span>
+  <h1>ECC WALL CONSOLE</h1><span class="muted" id="verLabel">v4.1</span>
   <div class="sp"></div>
   <button onclick="identify()">🔢 Identify</button>
   <button onclick="logout()">Sign out</button>
@@ -91,6 +91,8 @@
     <div class="row">
       <select id="rotScene"></select>
       <input id="rotSecs" type="number" value="60" min="2" style="width:64px" title="seconds">
+      <select id="rotTx" title="transition"></select>
+      <select id="rotSp" title="speed"><option value="fast">Fast</option><option value="normal" selected>Normal</option><option value="slow">Slow</option></select>
       <button class="acc" onclick="rotAdd()">＋ Add</button>
     </div>
     <div class="row" style="flex-wrap:wrap;gap:4px">
@@ -114,6 +116,9 @@
       <select id="setFit"><option value="fit">Fit (whole page)</option><option value="fill">Fill width</option></select></div>
     <div class="row"><label style="width:150px">Crop top (px)</label>
       <input id="setCrop" type="number" value="0" style="width:80px" title="crops trial banner"></div>
+    <div class="row"><label style="width:150px">Default transition</label>
+      <select id="setTx"></select>
+      <select id="setSp"><option value="fast">Fast</option><option value="normal">Normal</option><option value="slow">Slow</option></select></div>
     <div class="row"><label style="width:150px">Prewarm next scene</label>
       <input id="setPrewarm" type="checkbox" checked style="width:auto"></div>
     <div class="row"><button class="acc" onclick="saveSettings()">Save settings</button></div>
@@ -160,7 +165,7 @@ async function load(){
   render();
 }
 window.load=load;
-function boot(){ load(); setInterval(load,8000); paintLinks(); setInterval(rotPaint,1000); }
+function boot(){ rotTx.innerHTML=txOpts("fade"); load(); setInterval(load,8000); paintLinks(); setInterval(rotPaint,1000); }
 
 /* ---------- render ---------- */
 function render(){
@@ -178,7 +183,7 @@ function render(){
   for(const c of ST.content) sel.insertAdjacentHTML("beforeend",`<option value="${c.id}">${c.name}</option>`);
   const cl=document.getElementById("contentList"); cl.innerHTML="";
   for(const c of ST.content) cl.insertAdjacentHTML("beforeend",
-    `<li><span class="name" title="${c.url.slice(0,120)}">${c.name}</span>
+    `<li><span class="name" title="${(c.url||"").slice(0,120)}">${c.name}</span>
      <button onclick="renameContent('${c.id}')">✎</button><button onclick="delContent('${c.id}')">✕</button></li>`);
   const sl=document.getElementById("sceneList"); sl.innerHTML="";
   for(const s of ST.scenes) sl.insertAdjacentHTML("beforeend",
@@ -199,6 +204,7 @@ function render(){
        <input type="checkbox" ${on?"checked":""} onchange="rotEnable(${i},this.checked)" style="width:auto">
        <span class="name">${i+1}. ${sc?sc.name:"?"}</span>
        <input type="number" min="2" value="${it.seconds}" style="width:56px" onchange="rotSec(${i},this.value)">
+       <select onchange="rotTxSet(${i},this.value)" title="transition" style="max-width:110px">${txOpts(it.transition)}</select>
        <button onclick="rotDup(${i})">⧉</button>
        <button onclick="rotMove(${i},-1)">↑</button><button onclick="rotMove(${i},1)">↓</button>
        <button onclick="rotDel(${i})">✕</button></li>`);});
@@ -209,7 +215,10 @@ function render(){
     for(const p of data) pl.insertAdjacentHTML("beforeend",
       `<li><span class="name">${p.name}</span><button onclick="presetLoad('${p.name}')">Load</button>
        <button onclick="presetDel('${p.name}')">✕</button></li>`);});
-  if(ST.settings){ setFit.value=(ST.settings.data||{}).fit||"fit";
+  if(setTx.options.length===0) setTx.innerHTML=txOpts("fade");
+  if(ST.settings){ const sd=ST.settings.data||{};
+    setTx.value=sd.defaultTransition||"fade"; setSp.value=sd.defaultSpeed||"normal";
+    setFit.value=(ST.settings.data||{}).fit||"fit";
     setCrop.value=(ST.settings.data||{}).bannerCropPx||0;
     setPrewarm.checked=(ST.settings.data||{}).prewarmEnabled!==false; }
 }
@@ -225,6 +234,11 @@ window.identify=async()=>{ const d=(ST.settings.data)||{}; d._identify=Date.now(
   await sb.from("settings").update({data:d,updated_at:new Date().toISOString()}).eq("id","main"); };
 
 /* ---------- content ---------- */
+async function storeFile(path,f){
+  const up=await sb.storage.from("media").upload(path,f,{upsert:true,cacheControl:"3600"});
+  if(up.error) throw up.error;
+  return sb.storage.from("media").getPublicUrl(path).data.publicUrl;
+}
 window.addContent=async()=>{ const n=cName.value.trim(),u=cUrl.value.trim();
   if(!n||!u)return alert("Name and link required.");
   await sb.from("content").insert({id:uid("c"),name:n,url:u});
@@ -234,11 +248,6 @@ window.renameContent=async id=>{ const c=ST.content.find(x=>x.id===id);
   await sb.from("content").update({name:n.trim()||c.name}).eq("id",id); load(); };
 window.delContent=async id=>{ if(!confirm("Delete this content?"))return;
   await sb.from("content").delete().eq("id",id); load(); };
-async function storeFile(path,f){
-  const up=await sb.storage.from("media").upload(path,f,{upsert:true,cacheControl:"3600"});
-  if(up.error) throw up.error;
-  return sb.storage.from("media").getPublicUrl(path).data.publicUrl;
-}
 window.addImage=async()=>{ const f=imgFile.files[0]; if(!f)return alert("Choose an image first.");
   const name=prompt("Name:",f.name.replace(/\.[^.]+$/,"")); if(name===null)return;
   try{
@@ -256,7 +265,8 @@ window.uploadSlices=async()=>{
   const cmap={}; let done=0;
   try{
     for(const [scr,f] of Object.entries(map)){
-      const url=await storeFile("logo/"+scr+".png",f);
+      const ext=(f.name.split(".").pop()||"png").toLowerCase();
+      const url=await storeFile("logo/"+scr+"."+ext,f);
       const name="Logo "+scr;
       const old=ST.content.find(c=>c.name===name);
       if(old){ await sb.from("content").update({url}).eq("id",old.id); cmap[scr]=old.id; }
@@ -289,9 +299,11 @@ window.delScene=async id=>{ if(!confirm("Delete scene?"))return;
   await sb.from("scenes").delete().eq("id",id); load(); };
 
 /* ---------- rotation ---------- */
+function txOpts(sel){ return (C.TX||[]).map(t=>`<option value="${t.id}" ${t.id===sel?"selected":""}>${t.label}</option>`).join(""); }
+window.rotTxSet=(i,v)=>{const items=[...ST.rotation.items];items[i].transition=v;rotSave(items);};
 async function rotSave(items){ await sb.from("rotation").update({items,updated_at:new Date().toISOString()}).eq("id","main"); load(); }
 window.rotAdd=()=>{ const items=[...(ST.rotation.items||[])];
-  items.push({sceneId:rotScene.value,seconds:Math.max(2,+rotSecs.value||60),transition:"fade",speed:"normal",enabled:true});
+  items.push({sceneId:rotScene.value,seconds:Math.max(2,+rotSecs.value||60),transition:rotTx.value||"fade",speed:rotSp.value||"normal",enabled:true});
   rotSave(items); };
 window.rotDel=i=>{const items=[...ST.rotation.items];items.splice(i,1);rotSave(items);};
 window.rotSec=(i,v)=>{const items=[...ST.rotation.items];items[i].seconds=Math.max(2,+v||10);rotSave(items);};
@@ -348,7 +360,7 @@ window.presetDel=async n=>{ if(!confirm("Delete preset '"+n+"'?"))return;
 
 /* ---------- settings + links ---------- */
 window.saveSettings=async()=>{
-  const d=Object.assign({},ST.settings.data||{},{fit:setFit.value,bannerCropPx:+setCrop.value||0,prewarmEnabled:setPrewarm.checked});
+  const d=Object.assign({},ST.settings.data||{},{fit:setFit.value,bannerCropPx:+setCrop.value||0,prewarmEnabled:setPrewarm.checked,defaultTransition:setTx.value,defaultSpeed:setSp.value});
   delete d._identify;
   await sb.from("settings").update({data:d,updated_at:new Date().toISOString()}).eq("id","main");
   load(); alert("Settings saved. Screens update automatically."); };

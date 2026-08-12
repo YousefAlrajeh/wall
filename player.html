@@ -72,17 +72,51 @@ function cleanBuf(b){
 function swapRefs(){const t=front;front=back;back=t;}
 function applyCrop(b,px){ if(px>0){b.el.classList.add("crop");b.el.style.setProperty("--crop",px+"px");} else resetView(b); }
 
-/* ---------- effects (crossfade family; keep-warm safe) ---------- */
+/* ---------- effects (full library; keep-warm safe: layers animate, never reload) ---------- */
+const EASE="cubic-bezier(.4,0,.2,1)";
+function fxPair(fx){ /* returns [incomingKeyframes, outgoingKeyframes|null] */
+  switch(fx){
+    case "slide-left":  return [[{transform:"translateX(100%)"},{transform:"translateX(0)"}],null];
+    case "slide-right": return [[{transform:"translateX(-100%)"},{transform:"translateX(0)"}],null];
+    case "slide-up":    return [[{transform:"translateY(100%)"},{transform:"translateY(0)"}],null];
+    case "slide-down":  return [[{transform:"translateY(-100%)"},{transform:"translateY(0)"}],null];
+    case "push-left":   return [[{transform:"translateX(100%)"},{transform:"translateX(0)"}],
+                                [{transform:"translateX(0)"},{transform:"translateX(-100%)"}]];
+    case "push-right":  return [[{transform:"translateX(-100%)"},{transform:"translateX(0)"}],
+                                [{transform:"translateX(0)"},{transform:"translateX(100%)"}]];
+    case "zoom-in":     return [[{transform:"scale(1.15)",opacity:0},{transform:"scale(1)",opacity:1}],null];
+    case "zoom-out":    return [[{transform:"scale(.85)",opacity:0},{transform:"scale(1)",opacity:1}],null];
+    case "wipe-left":   return [[{clipPath:"inset(0 0 0 100%)"},{clipPath:"inset(0 0 0 0)"}],null];
+    case "wipe-right":  return [[{clipPath:"inset(0 100% 0 0)"},{clipPath:"inset(0 0 0 0)"}],null];
+    case "wipe-up":     return [[{clipPath:"inset(100% 0 0 0)"},{clipPath:"inset(0 0 0 0)"}],null];
+    case "wipe-down":   return [[{clipPath:"inset(0 0 100% 0)"},{clipPath:"inset(0 0 0 0)"}],null];
+    case "circle":      return [[{clipPath:"circle(0% at 50% 50%)"},{clipPath:"circle(75% at 50% 50%)"}],null];
+    case "blur":        return [[{opacity:0,filter:"blur(18px)"},{opacity:1,filter:"blur(0px)"}],null];
+    case "flip":        return [[{transform:"perspective(1600px) rotateY(70deg)",opacity:0},
+                                 {transform:"perspective(1600px) rotateY(0deg)",opacity:1}],null];
+    default:            return [[{opacity:0},{opacity:1}],null]; /* fade */
+  }
+}
 function runEffect(cmd,g){
   if(g!==gen) return;
-  const ms = cmd.effectMs||900;
-  back.el.style.transition = "opacity "+(ms/1000)+"s ease";
-  front.el.style.transition = "opacity "+(ms/1000)+"s ease";
-  back.el.classList.add("front");
-  front.el.classList.remove("front");
-  after(ms,()=>{ if(g!==gen)return;
+  const fx = cmd.effect || SETTINGS.defaultTransition || "fade";
+  const ms = cmd.effectMs || (C.SPEEDS&&C.SPEEDS[cmd.speed||SETTINGS.defaultSpeed||"normal"]) || 900;
+  const inc=back.el, out=front.el;
+  inc.style.transition="none"; out.style.transition="none";  /* WAAPI drives it */
+  const [ki,ko]=fxPair(fx);
+  inc.classList.add("front");            /* visible layer; entrance controlled by keyframes */
+  inc.style.zIndex="2"; out.style.zIndex="1";
+  const a1=inc.animate(ki,{duration:ms,easing:EASE,fill:"both"});
+  let a2=null;
+  if(ko) a2=out.animate(ko,{duration:ms,easing:EASE,fill:"both"});
+  else out.animate([{opacity:1},{opacity:1},{opacity:0}],{duration:ms,easing:"linear",fill:"both"});
+  a1.onfinish=()=>{ if(g!==gen)return;
+    out.classList.remove("front");
+    inc.style.zIndex=""; out.style.zIndex="";
+    inc.getAnimations().forEach(a=>a.cancel()); out.getAnimations().forEach(a=>a.cancel());
+    inc.style.transition=""; out.style.transition="";
     swapRefs(); currentUrl=cmd.url; hideBoot();
-  });
+  };
 }
 
 /* ---------- loading ---------- */
@@ -172,11 +206,10 @@ function isImg(u){return /\.(png|jpe?g|gif|webp)(\?|$)/i.test(u||"")||/^data:ima
 function cmdFor(contentId,extra){
   const c=cById(contentId); if(!c) return null;
   const pbi=isPbi(c.url);
-  if(!pbi&&isImg(c.url)) return Object.assign({url:imgWrap(c.url),contentId:c.id,tokenEmbed:false,settleMs:c.settle_ms??500,cropTop:0,effectMs:900},extra||{});
+  if(!pbi&&isImg(c.url)) return Object.assign({url:imgWrap(c.url),contentId:c.id,tokenEmbed:false,settleMs:c.settle_ms??500,cropTop:0},extra||{});
   return Object.assign({url:c.url,contentId:c.id,tokenEmbed:pbi,
     settleMs:c.settle_ms??(pbi?3000:800),
-    cropTop:pbi?(SETTINGS.bannerCropPx??0):0,
-    effectMs:900},extra||{});
+    cropTop:pbi?(SETTINGS.bannerCropPx??0):0},extra||{});
 }
 function rotationNow(){
   if(!ROT||!ROT.active||!ROT.items||!ROT.items.length) return null;
@@ -199,7 +232,9 @@ function tick(){
     const sc=SCENES.find(s=>s.id===r.item.sceneId);
     const cid=sc&&sc.map&&sc.map[SCREEN];
     const key="rot:"+r.item.sceneId+":"+cid;
-    if(cid&&key!==lastShownKey){ const cmd=cmdFor(cid); if(cmd){lastShownKey=key;show(cmd);} }
+    if(cid&&key!==lastShownKey){
+      const cmd=cmdFor(cid,{effect:r.item.transition,speed:r.item.speed});
+      if(cmd){lastShownKey=key;show(cmd);} }
     if(r.remain<9000&&!ROT.paused){
       const nx=r.items[(r.idx+1)%r.items.length];
       const sc2=SCENES.find(s=>s.id===nx.sceneId);
