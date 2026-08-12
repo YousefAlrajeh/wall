@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ECC Wall Player</title>
+<script src="config.js"></script>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden}
+  #stage{position:fixed;inset:0;background:#000}
+  .buf{position:absolute;inset:0;width:100vw;height:100vh;opacity:0;background:#000;
+       transition:opacity .9s ease;will-change:opacity,transform;backface-visibility:hidden}
+  .buf.front{opacity:1}
+  .buf iframe{border:0;width:100%;height:100%;display:block;background:#000}
+  .crop iframe{height:calc(100% + var(--crop,0px));margin-top:calc(-1 * var(--crop,0px))}
+  #boot{position:fixed;inset:0;z-index:40;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:14px;background:radial-gradient(ellipse at center,#12463a 0%,#0a2a22 70%,#061d17 100%);
+    color:#dff2e8;font-family:Segoe UI,sans-serif}
+  #boot .b1{font-size:2.2vw;letter-spacing:.25em;opacity:.85}
+  #boot .b2{font-size:5vw;font-weight:700;letter-spacing:.1em}
+  #boot .b3{font-size:1.4vw;opacity:.7}
+  #boot .spin{width:3.2vw;height:3.2vw;border:.35vw solid rgba(255,255,255,.15);
+    border-top-color:#39c98e;border-radius:50%;animation:bsp 1s linear infinite}
+  @keyframes bsp{to{transform:rotate(360deg)}}
+  #keyerr{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;
+    background:#1a0d0d;color:#e8b4b4;font-family:Segoe UI,sans-serif;font-size:2vw;text-align:center}
+  #identify{position:fixed;inset:0;z-index:45;display:none;align-items:center;justify-content:center;
+    background:rgba(6,29,23,.92);color:#fff;font:700 18vw Segoe UI,sans-serif;letter-spacing:.05em}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="buf" id="bufA"><iframe id="ifrA" allowfullscreen></iframe><div id="pbiA" style="width:100%;height:100%;display:none"></div></div>
+  <div class="buf" id="bufB"><iframe id="ifrB" allowfullscreen></iframe><div id="pbiB" style="width:100%;height:100%;display:none"></div></div>
+</div>
+<div id="boot"><div class="b1">DR. SULAIMAN AL HABIB — ECC WALL</div><div class="b2" id="bootId"></div>
+  <div class="spin"></div><div class="b3">Loading dashboard…</div></div>
+<div id="keyerr">Access key missing or wrong.<br>Check the screen link.</div>
+<div id="identify"></div>
+<script type="module">
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+const C = window.WALLCFG;
+const qs = new URLSearchParams(location.search);
+const SCREEN = (qs.get("s")||"R1C1").toUpperCase();
+const KEY = qs.get("k")||"";
+document.getElementById("bootId").textContent = SCREEN;
+const sb = createClient(C.SUPA_URL, C.SUPA_KEY);
+
+/* ---------- state ---------- */
+let SETTINGS={}, SCENES=[], CONTENT=[], ROT=null, ASSIGN=null;
+let gen=0, currentUrl=null, lastCmd=null;
+const bufs={a:{el:bufA,ifr:ifrA,pbi:pbiA,id:"a"},b:{el:bufB,ifr:ifrB,pbi:pbiB,id:"b"}};
+let front=bufs.a, back=bufs.b;
+const WARM={a:null,b:null}, WARMLOADING={a:null,b:null};
+let pbiReports={}, powerbiReady=null, warmGen=0;
+const cById=id=>CONTENT.find(x=>x.id===id);
+
+function hideBoot(){const b=document.getElementById("boot");if(b)b.style.display="none";}
+function after(ms,f){return setTimeout(f,ms);}
+function isPbi(u){return /app\.(powerbi|fabric\.microsoft)\.com\/reportEmbed/i.test(u||"");}
+function loadSdk(){ if(powerbiReady) return powerbiReady;
+  powerbiReady=new Promise(res=>{const s=document.createElement("script");s.src=C.PBI_SDK;s.onload=res;document.head.appendChild(s);});
+  return powerbiReady; }
+
+function resetView(b){ b.el.classList.remove("crop"); b.el.style.removeProperty("--crop"); }
+function cleanBuf(b){
+  WARM[b.id]=null; WARMLOADING[b.id]=null; resetView(b);
+  if(pbiReports[b.id]){ try{window.powerbi&&powerbi.reset(b.pbi);}catch(e){} delete pbiReports[b.id]; }
+  b.pbi.style.display="none"; b.ifr.style.display="block";
+  try{b.ifr.src="about:blank";}catch(e){}
+}
+function swapRefs(){const t=front;front=back;back=t;}
+function applyCrop(b,px){ if(px>0){b.el.classList.add("crop");b.el.style.setProperty("--crop",px+"px");} else resetView(b); }
+
+/* ---------- effects (crossfade family; keep-warm safe) ---------- */
+function runEffect(cmd,g){
+  if(g!==gen) return;
+  const ms = cmd.effectMs||900;
+  back.el.style.transition = "opacity "+(ms/1000)+"s ease";
+  front.el.style.transition = "opacity "+(ms/1000)+"s ease";
+  back.el.classList.add("front");
+  front.el.classList.remove("front");
+  after(ms,()=>{ if(g!==gen)return;
+    swapRefs(); currentUrl=cmd.url; hideBoot();
+  });
+}
+
+/* ---------- loading ---------- */
+async function tokenConfig(contentId){
+  const r = await fetch(C.TOKEN_FN+"?content="+encodeURIComponent(contentId)+"&k="+encodeURIComponent(KEY));
+  if(!r.ok) throw new Error("token fn "+r.status);
+  return r.json();
+}
+async function embedPbi(b,cmd,onRendered){
+  await loadSdk();
+  const cfg = await tokenConfig(cmd.contentId);
+  const models = window["powerbi-client"].models;
+  b.ifr.style.display="none"; b.pbi.style.display="block";
+  try{powerbi.reset(b.pbi);}catch(e){}
+  const conf={type:"report",id:cfg.reportId,embedUrl:cfg.embedUrl,accessToken:cfg.token,
+    tokenType:models.TokenType.Embed,
+    settings:{layoutType:models.LayoutType.Custom,
+      customLayout:{displayOption:(SETTINGS.fit==="fill")?models.DisplayOption.FitToWidth:models.DisplayOption.FitToPage},
+      panes:{filters:{visible:false},pageNavigation:{visible:false}}}};
+  if(cfg.pageName) conf.pageName=cfg.pageName;
+  const rep=powerbi.embed(b.pbi,conf);
+  pbiReports[b.id]=rep;
+  applyCrop(b, cmd.cropTop||0);
+  rep.on("rendered",()=>onRendered&&onRendered());
+  rep.on("error",async ev=>{ console.error("pbi",ev&&ev.detail);
+    try{const c2=await tokenConfig(cmd.contentId); rep.setAccessToken(c2.token);}catch(e){}
+  });
+  return rep;
+}
+function show(cmd){
+  const g=++gen; lastCmd=cmd;
+  if(cmd.url===currentUrl && !cmd.force) return;
+  const warm=WARM[back.id];
+  if(warm && warm.url===cmd.url && !cmd.force){ after(0,()=>{if(g===gen)runEffect(cmd,g);}); return; }
+  const wl=WARMLOADING[back.id];
+  if(wl && wl.url===cmd.url && !cmd.force && Date.now()-wl.startedAt<60000){
+    const iv=setInterval(()=>{ if(g!==gen){clearInterval(iv);return;}
+      if(WARM[back.id]&&WARM[back.id].url===cmd.url){clearInterval(iv);runEffect(cmd,g);}
+      else if(!WARMLOADING[back.id]){clearInterval(iv);coldLoad(cmd,g);}},250);
+    after(60000,()=>clearInterval(iv)); return;
+  }
+  coldLoad(cmd,g);
+}
+function coldLoad(cmd,g){
+  cleanBuf(back);
+  if(cmd.tokenEmbed&&cmd.contentId){
+    let settled=false;
+    embedPbi(back,cmd,()=>{ if(settled||g!==gen)return; settled=true;
+      WARM[back.id]={url:cmd.url}; WARMLOADING[back.id]=null;
+      after(Math.min(cmd.settleMs||3000,3000),()=>runEffect(cmd,g));
+    }).catch(e=>{console.error(e); if(g===gen) after(8000,()=>{currentUrl=null;show(cmd);});});
+    after(45000,()=>{ if(!settled&&g===gen){settled=true;runEffect(cmd,g);} });
+  }else{
+    const t=back.ifr; back.pbi.style.display="none"; t.style.display="block";
+    applyCrop(back,cmd.cropTop||0);
+    let done=false;
+    t.onload=()=>{ t.onload=null; if(done||g!==gen)return; done=true;
+      WARM[back.id]={url:cmd.url}; WARMLOADING[back.id]=null;
+      after(cmd.settleMs??800,()=>runEffect(cmd,g)); };
+    after(30000,()=>{ if(!done&&g===gen){done=true;runEffect(cmd,g);} });
+    try{t.src=cmd.url;}catch(e){}
+  }
+}
+function prewarm(cmd){
+  if(SETTINGS.prewarmEnabled===false) return;
+  if(WARM[back.id]&&WARM[back.id].url===cmd.url) return;
+  if(lastCmd&&currentUrl!==lastCmd.url) { after(2500,()=>prewarm(cmd)); return; }
+  const wg=++warmGen,g0=gen;
+  cleanBuf(back); WARMLOADING[back.id]={url:cmd.url,startedAt:Date.now()};
+  if(cmd.tokenEmbed&&cmd.contentId){
+    embedPbi(back,cmd,()=>{ if(wg===warmGen&&g0===gen){WARM[back.id]={url:cmd.url};WARMLOADING[back.id]=null;} })
+      .catch(()=>{WARMLOADING[back.id]=null;});
+  }else{
+    const t=back.ifr; back.pbi.style.display="none"; t.style.display="block"; applyCrop(back,cmd.cropTop||0);
+    t.onload=()=>{t.onload=null; if(wg===warmGen&&g0===gen){WARM[back.id]={url:cmd.url};WARMLOADING[back.id]=null;}};
+    try{t.src=cmd.url;}catch(e){ WARMLOADING[back.id]=null; }
+  }
+}
+
+/* ---------- deciding what to show (clock-math rotation) ---------- */
+function cmdFor(contentId,extra){
+  const c=cById(contentId); if(!c) return null;
+  const pbi=isPbi(c.url);
+  return Object.assign({url:c.url,contentId:c.id,tokenEmbed:pbi,
+    settleMs:c.settle_ms??(pbi?3000:800),
+    cropTop:pbi?(SETTINGS.bannerCropPx??0):0,
+    effectMs:900},extra||{});
+}
+function rotationNow(){
+  if(!ROT||!ROT.active||!ROT.items||!ROT.items.length) return null;
+  const items=ROT.items.filter(i=>i.enabled!==false&&SCENES.find(s=>s.id===i.sceneId));
+  if(!items.length) return null;
+  const cycle=items.reduce((a,i)=>a+(i.seconds||30)*1000,0);
+  let elapsed;
+  if(ROT.paused){ elapsed=(new Date(ROT.paused_at||ROT.started_at)-new Date(ROT.started_at)); }
+  else elapsed=Date.now()-new Date(ROT.started_at).getTime();
+  let pos=((elapsed%cycle)+cycle)%cycle;
+  for(const it of items){ const d=(it.seconds||30)*1000;
+    if(pos<d) return {item:it,remain:d-pos,items,idx:items.indexOf(it)};
+    pos-=d; }
+  return {item:items[0],remain:(items[0].seconds||30)*1000,items,idx:0};
+}
+let lastShownKey=null;
+function tick(){
+  const r=rotationNow();
+  if(r){
+    const sc=SCENES.find(s=>s.id===r.item.sceneId);
+    const cid=sc&&sc.map&&sc.map[SCREEN];
+    const key="rot:"+r.item.sceneId+":"+cid;
+    if(cid&&key!==lastShownKey){ const cmd=cmdFor(cid); if(cmd){lastShownKey=key;show(cmd);} }
+    if(r.remain<9000&&!ROT.paused){
+      const nx=r.items[(r.idx+1)%r.items.length];
+      const sc2=SCENES.find(s=>s.id===nx.sceneId);
+      const cid2=sc2&&sc2.map&&sc2.map[SCREEN];
+      if(cid2&&cid2!==cid){const p=cmdFor(cid2); if(p)prewarm(p);}
+    }
+    return;
+  }
+  if(ASSIGN){
+    if(ASSIGN.kind==="clear"){ if(lastShownKey!=="clear"){lastShownKey="clear";
+      gen++; cleanBuf(front);cleanBuf(back);front.el.classList.remove("front");currentUrl=null;hideBoot();} return; }
+    const key="man:"+ASSIGN.content_id;
+    if(ASSIGN.content_id&&key!==lastShownKey){const cmd=cmdFor(ASSIGN.content_id);if(cmd){lastShownKey=key;show(cmd);}}
+  }
+}
+
+/* ---------- data load + realtime ---------- */
+async function loadAll(){
+  const [se,co,sc,ro,as]=await Promise.all([
+    sb.from("settings").select("*").eq("id","main").single(),
+    sb.from("content").select("*").order("sort").order("created_at"),
+    sb.from("scenes").select("*").order("sort").order("created_at"),
+    sb.from("rotation").select("*").eq("id","main").single(),
+    sb.from("assignments").select("*").eq("screen",SCREEN).single()
+  ]);
+  if(se.error) throw se.error;
+  SETTINGS=Object.assign({},se.data.data||{}); SETTINGS._screen_key=se.data.screen_key;
+  CONTENT=co.data||[]; SCENES=sc.data||[]; ROT=ro.data; ASSIGN=as.data;
+}
+function subscribe(){
+  sb.channel("wall")
+    .on("postgres_changes",{event:"*",schema:"public",table:"assignments",filter:"screen=eq."+SCREEN},
+        p=>{ASSIGN=p.new||ASSIGN;lastShownKey=null;tick();})
+    .on("postgres_changes",{event:"*",schema:"public",table:"rotation"},p=>{ROT=p.new||ROT;lastShownKey=null;tick();})
+    .on("postgres_changes",{event:"*",schema:"public",table:"scenes"},()=>loadAll().then(tick))
+    .on("postgres_changes",{event:"*",schema:"public",table:"content"},()=>loadAll().then(tick))
+    .on("postgres_changes",{event:"*",schema:"public",table:"settings"},p=>{
+        if(p.new){SETTINGS=Object.assign({},p.new.data||{});SETTINGS._screen_key=p.new.screen_key;
+          if(p.new.data&&p.new.data._identify){identifyFlash();} lastShownKey=null;tick();}})
+    .subscribe();
+}
+function identifyFlash(){ const d=document.getElementById("identify");
+  d.textContent=SCREEN; d.style.display="flex"; after(4000,()=>d.style.display="none"); }
+
+/* ---------- boot ---------- */
+(async()=>{
+  try{ await loadAll(); }
+  catch(e){ document.getElementById("keyerr").textContent="Cannot reach the wall database.\nCheck internet / setup."; 
+    document.getElementById("keyerr").style.display="flex"; console.error(e); return; }
+  if(!SETTINGS._screen_key || KEY!==SETTINGS._screen_key){
+    document.getElementById("keyerr").style.display="flex";
+    document.getElementById("boot").style.display="none"; return; }
+  subscribe();
+  tick();
+  setInterval(tick,1000);
+  setInterval(()=>loadAll().catch(()=>{}),20000); /* safety net if realtime hiccups */
+  /* daily reload for freshness at 03:00 */
+  setInterval(()=>{const d=new Date();if(d.getHours()===3&&d.getMinutes()===0)location.reload();},60000);
+})();
+</script>
+</body>
+</html>

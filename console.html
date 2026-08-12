@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ECC Wall Console</title>
+<script src="config.js"></script>
+<style>
+  :root{--bg:#0f1a15;--panel:#16241d;--line:#24382e;--ink:#dfeee6;--dim:#8fa89b;--green:#39c98e;--acc:#157347;--red:#c0392b}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 "Segoe UI",system-ui,sans-serif}
+  header{display:flex;align-items:center;gap:14px;padding:12px 18px;background:#0a130f;border-bottom:1px solid var(--line)}
+  header h1{margin:0;font-size:16px;letter-spacing:.08em}
+  header .sp{flex:1}
+  button{background:#1d3328;border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:6px 11px;cursor:pointer;font-size:13px}
+  button:hover{border-color:var(--green)}
+  button.acc{background:var(--acc);border-color:var(--acc)}
+  input,select{background:#0d1712;border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:6px 9px;font-size:13px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;padding:14px 18px}
+  .box{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px 14px}
+  .box h2{margin:0 0 9px;font-size:14px;color:var(--green);letter-spacing:.05em}
+  .row{display:flex;gap:6px;align-items:center;margin:6px 0;flex-wrap:wrap}
+  ul.clist{list-style:none;margin:8px 0 0;padding:0;max-height:290px;overflow:auto}
+  ul.clist li{display:flex;gap:6px;align-items:center;background:#101c15;border:1px solid var(--line);border-radius:7px;padding:5px 8px;margin:4px 0}
+  ul.clist .name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .wallgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-top:6px}
+  .cell{background:#101c15;border:1px solid var(--line);border-radius:6px;padding:5px 4px;text-align:center;font-size:11px;cursor:pointer;user-select:none}
+  .cell.sel{outline:2px solid var(--green)}
+  .cell .cn{color:var(--dim);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #login{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:50}
+  #login .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:26px;width:320px}
+  #login h2{margin:0 0 14px;color:var(--green)}
+  #login input{width:100%;margin:5px 0}
+  #login button{width:100%;margin-top:12px}
+  #lerr{color:#e88;font-size:13px;min-height:18px;margin-top:8px}
+  #rotStatus{font-size:13px;margin:2px 0 4px;color:var(--dim)}
+  .links textarea{width:100%;height:130px;background:#0d1712;color:#bcd9c9;border:1px solid var(--line);border-radius:8px;font:12px Consolas,monospace;padding:8px}
+  .muted{color:var(--dim);font-size:12px}
+</style>
+</head>
+<body>
+<div id="login"><div class="card">
+  <h2>ECC WALL — Sign in</h2>
+  <input id="lu" placeholder="Email" autocomplete="username">
+  <input id="lp" placeholder="Password" type="password" autocomplete="current-password">
+  <button class="acc" onclick="doLogin()">Sign in</button>
+  <div id="lerr"></div>
+</div></div>
+
+<header>
+  <h1>ECC WALL CONSOLE</h1><span class="muted" id="verLabel">v4.0</span>
+  <div class="sp"></div>
+  <button onclick="identify()">🔢 Identify</button>
+  <button onclick="logout()">Sign out</button>
+</header>
+
+<div class="grid">
+
+  <div class="box" style="grid-column:1/-1">
+    <h2>WALL — click screens to select, then Show</h2>
+    <div class="row">
+      <select id="showSel"></select>
+      <button class="acc" onclick="doShow()">▶ Show on selected</button>
+      <button onclick="doClear()">✕ Clear selected</button>
+      <button onclick="selAll()">Select all</button>
+      <button onclick="SEL.clear();render()">Unselect</button>
+    </div>
+    <div class="wallgrid" id="wallGrid"></div>
+  </div>
+
+  <div class="box">
+    <h2>CONTENT LIBRARY</h2>
+    <div class="row"><input id="cName" placeholder="Name" style="flex:1"></div>
+    <div class="row"><input id="cUrl" placeholder="Link (Power BI page link or any URL)" style="flex:1">
+      <button class="acc" onclick="addContent()">Add</button></div>
+    <div class="row"><input type="file" id="imgFile" accept="image/*" style="font-size:12px">
+      <button onclick="addImage()">Add image</button></div>
+    <div class="row"><input type="file" id="sliceFiles" accept="image/*" multiple style="font-size:12px">
+      <button onclick="uploadSlices()">⬆ 21 logo slices → scene</button></div>
+    <ul class="clist" id="contentList"></ul>
+  </div>
+
+  <div class="box">
+    <h2>SCENES (one-click layouts)</h2>
+    <div class="row"><input id="sName" placeholder="Scene name" style="flex:1">
+      <button class="acc" onclick="saveScene()">💾 Save current wall</button></div>
+    <ul class="clist" id="sceneList"></ul>
+  </div>
+
+  <div class="box">
+    <h2>SCENE ROTATION (wall timer)</h2>
+    <div class="row">
+      <select id="rotScene"></select>
+      <input id="rotSecs" type="number" value="60" min="2" style="width:64px" title="seconds">
+      <button class="acc" onclick="rotAdd()">＋ Add</button>
+    </div>
+    <div class="row" style="flex-wrap:wrap;gap:4px">
+      <button class="acc" onclick="rotCtl('start')">▶ Start</button>
+      <button onclick="rotCtl('pause')">⏸</button>
+      <button onclick="rotCtl('resume')">▶</button>
+      <button onclick="rotCtl('stop')">⏹</button>
+      <button onclick="rotCtl('prev')">⏮</button>
+      <button onclick="rotCtl('next')">⏭</button>
+      <button onclick="rotPreview()">👁</button>
+      <button onclick="presetSave()">💾 Preset</button>
+    </div>
+    <div id="rotStatus">⏹ stopped</div>
+    <ul class="clist" id="rotList"></ul>
+    <ul class="clist" id="presetList"></ul>
+  </div>
+
+  <div class="box">
+    <h2>SETTINGS</h2>
+    <div class="row"><label style="width:150px">Dashboard fill</label>
+      <select id="setFit"><option value="fit">Fit (whole page)</option><option value="fill">Fill width</option></select></div>
+    <div class="row"><label style="width:150px">Crop top (px)</label>
+      <input id="setCrop" type="number" value="0" style="width:80px" title="crops trial banner"></div>
+    <div class="row"><label style="width:150px">Prewarm next scene</label>
+      <input id="setPrewarm" type="checkbox" checked style="width:auto"></div>
+    <div class="row"><button class="acc" onclick="saveSettings()">Save settings</button></div>
+  </div>
+
+  <div class="box links" style="grid-column:1/-1">
+    <h2>SCREEN LINKS (paste into Sidebar — key already included)</h2>
+    <textarea id="linksBox" readonly></textarea>
+    <div class="row"><button onclick="copyLinks()">⧉ Copy all 21</button>
+      <span class="muted">Wall view for monitoring: <a id="wallLink" target="_blank" style="color:var(--green)"></a></span></div>
+  </div>
+
+</div>
+
+<script type="module">
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+const C=window.WALLCFG;
+const sb=createClient(C.SUPA_URL,C.SUPA_KEY);
+window.sb=sb;
+let ST={content:[],scenes:[],assignments:[],rotation:null,settings:null};
+window.SEL=new Set();
+const uid=p=>p+"_"+Math.random().toString(36).slice(2,9);
+const screens=[];for(let r=1;r<=C.ROWS;r++)for(let c=1;c<=C.COLS;c++)screens.push("R"+r+"C"+c);
+
+/* ---------- auth ---------- */
+window.doLogin=async()=>{
+  const {error}=await sb.auth.signInWithPassword({email:lu.value.trim(),password:lp.value});
+  if(error){lerr.textContent=error.message;return;}
+  login.style.display="none"; boot();
+};
+window.logout=async()=>{await sb.auth.signOut();location.reload();};
+sb.auth.getSession().then(({data})=>{ if(data.session){login.style.display="none";boot();} });
+
+/* ---------- data ---------- */
+async function load(){
+  const [co,sc,as,ro,se]=await Promise.all([
+    sb.from("content").select("*").order("sort").order("created_at"),
+    sb.from("scenes").select("*").order("sort").order("created_at"),
+    sb.from("assignments").select("*"),
+    sb.from("rotation").select("*").eq("id","main").single(),
+    sb.from("settings").select("*").eq("id","main").single()
+  ]);
+  ST={content:co.data||[],scenes:sc.data||[],assignments:as.data||[],rotation:ro.data,settings:se.data};
+  render();
+}
+window.load=load;
+function boot(){ load(); setInterval(load,8000); paintLinks(); setInterval(rotPaint,1000); }
+
+/* ---------- render ---------- */
+function render(){
+  const g=document.getElementById("wallGrid"); g.innerHTML="";
+  for(const s of screens){
+    const a=ST.assignments.find(x=>x.screen===s);
+    const c=a&&a.content_id?ST.content.find(x=>x.id===a.content_id):null;
+    const d=document.createElement("div");
+    d.className="cell"+(SEL.has(s)?" sel":"");
+    d.innerHTML="<b>"+s+"</b><div class='cn'>"+(c?c.name:(a&&a.kind==="clear"?"—":"?"))+"</div>";
+    d.onclick=()=>{SEL.has(s)?SEL.delete(s):SEL.add(s);render();};
+    g.appendChild(d);
+  }
+  const sel=document.getElementById("showSel"); sel.innerHTML="";
+  for(const c of ST.content) sel.insertAdjacentHTML("beforeend",`<option value="${c.id}">${c.name}</option>`);
+  const cl=document.getElementById("contentList"); cl.innerHTML="";
+  for(const c of ST.content) cl.insertAdjacentHTML("beforeend",
+    `<li><span class="name" title="${c.url.slice(0,120)}">${c.name}</span>
+     <button onclick="renameContent('${c.id}')">✎</button><button onclick="delContent('${c.id}')">✕</button></li>`);
+  const sl=document.getElementById("sceneList"); sl.innerHTML="";
+  for(const s of ST.scenes) sl.insertAdjacentHTML("beforeend",
+    `<li><span class="name">${s.name} <span class="muted">(${Object.keys(s.map||{}).length})</span></span>
+     <button class="acc" onclick="activateScene('${s.id}')">▶</button>
+     <button onclick="delScene('${s.id}')">✕</button></li>`);
+  const rs=document.getElementById("rotScene"); rs.innerHTML="";
+  for(const s of ST.scenes) rs.insertAdjacentHTML("beforeend",`<option value="${s.id}">${s.name}</option>`);
+  const rl=document.getElementById("rotList"); rl.innerHTML="";
+  const rot=ST.rotation||{items:[]}; let cyc=0,en=0;
+  (rot.items||[]).forEach((it,i)=>{
+    const on=it.enabled!==false; if(on){cyc+=it.seconds;en++;}
+    const sc=ST.scenes.find(s=>s.id===it.sceneId);
+    rl.insertAdjacentHTML("beforeend",
+      `<li draggable="true" ondragstart="rotDragStart(event,${i})" ondragover="event.preventDefault()" ondrop="rotDrop(event,${i})"
+           style="${on?'':'opacity:.45;'}cursor:grab">
+       <span>⠿</span>
+       <input type="checkbox" ${on?"checked":""} onchange="rotEnable(${i},this.checked)" style="width:auto">
+       <span class="name">${i+1}. ${sc?sc.name:"?"}</span>
+       <input type="number" min="2" value="${it.seconds}" style="width:56px" onchange="rotSec(${i},this.value)">
+       <button onclick="rotDup(${i})">⧉</button>
+       <button onclick="rotMove(${i},-1)">↑</button><button onclick="rotMove(${i},1)">↓</button>
+       <button onclick="rotDel(${i})">✕</button></li>`);});
+  if((rot.items||[]).length)
+    rl.insertAdjacentHTML("beforeend",`<li style="border:none;background:none"><span class="name muted">Full cycle: ${cyc}s over ${en} walls</span></li>`);
+  const pl=document.getElementById("presetList"); pl.innerHTML="";
+  sb.from("rotation_presets").select("name").then(({data})=>{ if(!data)return; pl.innerHTML="";
+    for(const p of data) pl.insertAdjacentHTML("beforeend",
+      `<li><span class="name">${p.name}</span><button onclick="presetLoad('${p.name}')">Load</button>
+       <button onclick="presetDel('${p.name}')">✕</button></li>`);});
+  if(ST.settings){ setFit.value=(ST.settings.data||{}).fit||"fit";
+    setCrop.value=(ST.settings.data||{}).bannerCropPx||0;
+    setPrewarm.checked=(ST.settings.data||{}).prewarmEnabled!==false; }
+}
+
+/* ---------- wall ops ---------- */
+window.selAll=()=>{screens.forEach(s=>SEL.add(s));render();};
+window.doShow=async()=>{ if(!SEL.size)return alert("Click screens first.");
+  const cid=showSel.value;
+  for(const s of SEL) await sb.from("assignments").upsert({screen:s,kind:"content",content_id:cid,updated_at:new Date().toISOString()});
+  load(); };
+window.doClear=async()=>{ for(const s of SEL) await sb.from("assignments").upsert({screen:s,kind:"clear",content_id:null,updated_at:new Date().toISOString()}); load(); };
+window.identify=async()=>{ const d=(ST.settings.data)||{}; d._identify=Date.now();
+  await sb.from("settings").update({data:d,updated_at:new Date().toISOString()}).eq("id","main"); };
+
+/* ---------- content ---------- */
+window.addContent=async()=>{ const n=cName.value.trim(),u=cUrl.value.trim();
+  if(!n||!u)return alert("Name and link required.");
+  await sb.from("content").insert({id:uid("c"),name:n,url:u});
+  cName.value=cUrl.value=""; load(); };
+window.renameContent=async id=>{ const c=ST.content.find(x=>x.id===id);
+  const n=prompt("New name:",c.name); if(n===null)return;
+  await sb.from("content").update({name:n.trim()||c.name}).eq("id",id); load(); };
+window.delContent=async id=>{ if(!confirm("Delete this content?"))return;
+  await sb.from("content").delete().eq("id",id); load(); };
+window.addImage=async()=>{ const f=imgFile.files[0]; if(!f)return alert("Choose an image first.");
+  const name=prompt("Name:",f.name.replace(/\.[^.]+$/,"")); if(name===null)return;
+  const dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});
+  await sb.from("content").insert({id:uid("c"),name:name.trim()||"Image",url:dataUrl});
+  imgFile.value=""; load(); alert("Image added."); };
+function screenFromName(fn){ let m=fn.match(/r([1-3])c([1-7])/i); if(m)return "R"+m[1]+"C"+m[2];
+  m=fn.match(/(\d{1,2})/); if(m){const n=+m[1]; if(n>=1&&n<=21){return "R"+Math.ceil(n/7)+"C"+(((n-1)%7)+1);}} return null; }
+window.uploadSlices=async()=>{
+  const files=[...sliceFiles.files]; if(!files.length)return alert("Select all 21 slice files.");
+  const map={},un=[];
+  for(const f of files){const s=screenFromName(f.name); if(s)map[s]=f; else un.push(f.name);}
+  if(un.length)return alert("Can't match these to screens:\n"+un.join("\n"));
+  const cmap={};
+  let done=0;
+  for(const [s,f] of Object.entries(map)){
+    const dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});
+    const name="Logo "+s;
+    const old=ST.content.find(c=>c.name===name);
+    if(old){ await sb.from("content").update({url:dataUrl}).eq("id",old.id); cmap[s]=old.id; }
+    else { const id=uid("c"); await sb.from("content").insert({id,name,url:dataUrl}); cmap[s]=id; }
+    done++; rotStatus.textContent="Uploading "+done+"/"+Object.keys(map).length;
+  }
+  const oldSc=ST.scenes.find(s=>s.name==="Giant Logo");
+  if(oldSc) await sb.from("scenes").delete().eq("id",oldSc.id);
+  await sb.from("scenes").insert({id:uid("s"),name:"Giant Logo",map:cmap});
+  load(); alert("Giant Logo scene ready."); };
+
+/* ---------- scenes ---------- */
+window.saveScene=async()=>{ const name=sName.value.trim(); if(!name)return alert("Give the scene a name");
+  await load2();
+  const map={};
+  for(const a of ST.assignments) if(a.kind==="content"&&a.content_id) map[a.screen]=a.content_id;
+  if(!Object.keys(map).length)return alert("Show content on at least one screen first.");
+  await sb.from("scenes").insert({id:uid("s"),name,map});
+  sName.value=""; load(); alert("Scene '"+name+"' saved with "+Object.keys(map).length+" screens."); };
+async function load2(){ const {data}=await sb.from("assignments").select("*"); ST.assignments=data||[]; }
+window.activateScene=async id=>{ const s=ST.scenes.find(x=>x.id===id); if(!s)return;
+  for(const [scr,cid] of Object.entries(s.map||{}))
+    await sb.from("assignments").upsert({screen:scr,kind:"content",content_id:cid,updated_at:new Date().toISOString()});
+  load(); };
+window.delScene=async id=>{ if(!confirm("Delete scene?"))return;
+  const rot=ST.rotation; if(rot&&(rot.items||[]).some(i=>i.sceneId===id)){
+    rot.items=rot.items.filter(i=>i.sceneId!==id);
+    await sb.from("rotation").update({items:rot.items}).eq("id","main"); }
+  await sb.from("scenes").delete().eq("id",id); load(); };
+
+/* ---------- rotation ---------- */
+async function rotSave(items){ await sb.from("rotation").update({items,updated_at:new Date().toISOString()}).eq("id","main"); load(); }
+window.rotAdd=()=>{ const items=[...(ST.rotation.items||[])];
+  items.push({sceneId:rotScene.value,seconds:Math.max(2,+rotSecs.value||60),transition:"fade",speed:"normal",enabled:true});
+  rotSave(items); };
+window.rotDel=i=>{const items=[...ST.rotation.items];items.splice(i,1);rotSave(items);};
+window.rotSec=(i,v)=>{const items=[...ST.rotation.items];items[i].seconds=Math.max(2,+v||10);rotSave(items);};
+window.rotMove=(i,d)=>{const items=[...ST.rotation.items];const j=i+d;if(j<0||j>=items.length)return;
+  [items[i],items[j]]=[items[j],items[i]];rotSave(items);};
+window.rotDup=i=>{const items=[...ST.rotation.items];items.splice(i+1,0,JSON.parse(JSON.stringify(items[i])));rotSave(items);};
+window.rotEnable=(i,on)=>{const items=[...ST.rotation.items];items[i].enabled=on;rotSave(items);};
+let rotDragIdx=null;
+window.rotDragStart=(e,i)=>{rotDragIdx=i;};
+window.rotDrop=(e,i)=>{e.preventDefault();if(rotDragIdx===null||rotDragIdx===i)return;
+  const items=[...ST.rotation.items];const [m]=items.splice(rotDragIdx,1);items.splice(i,0,m);rotDragIdx=null;rotSave(items);};
+window.rotCtl=async x=>{
+  const r=ST.rotation, now=new Date();
+  if(x==="start"){ if(!(r.items||[]).length)return alert("Add walls first.");
+    await sb.from("rotation").update({active:true,paused:false,started_at:now.toISOString(),paused_at:null}).eq("id","main"); }
+  if(x==="stop") await sb.from("rotation").update({active:false,paused:false}).eq("id","main");
+  if(x==="pause") await sb.from("rotation").update({paused:true,paused_at:now.toISOString()}).eq("id","main");
+  if(x==="resume"){ const shift=now-new Date(r.paused_at||now);
+    const st=new Date(new Date(r.started_at).getTime()+shift);
+    await sb.from("rotation").update({paused:false,started_at:st.toISOString(),paused_at:null}).eq("id","main"); }
+  if(x==="next"||x==="prev"){
+    const items=(r.items||[]).filter(i=>i.enabled!==false); if(!items.length)return;
+    const cyc=items.reduce((a,i)=>a+i.seconds*1000,0);
+    let el=(r.paused?new Date(r.paused_at):now)-new Date(r.started_at); let pos=((el%cyc)+cyc)%cyc;
+    let acc=0,idx=0; for(let k=0;k<items.length;k++){ if(pos<acc+items[k].seconds*1000){idx=k;break;} acc+=items[k].seconds*1000; }
+    const tgt=(idx+(x==="next"?1:items.length-1))%items.length;
+    let tstart=0; for(let k=0;k<tgt;k++)tstart+=items[k].seconds*1000;
+    const st=new Date((r.paused?new Date(r.paused_at):now).getTime()-tstart);
+    await sb.from("rotation").update({started_at:st.toISOString()}).eq("id","main"); }
+  load(); };
+window.rotPreview=()=>{ const on=(ST.rotation.items||[]).filter(i=>i.enabled!==false);
+  if(!on.length)return alert("No enabled walls.");
+  let t=0,lines=on.map((it,n)=>{t+=it.seconds;const s=ST.scenes.find(x=>x.id===it.sceneId);
+    return (n+1)+". "+(s?s.name:"?")+" — "+it.seconds+"s";});
+  alert("PLAYBACK (loops forever):\n\n"+lines.join("\n   ↓\n")+"\n   ↓ back to 1.\n\nFull cycle: "+t+"s"); };
+function rotPaint(){ const el=document.getElementById("rotStatus"); const r=ST.rotation;
+  if(!r||!r.active){el.textContent="⏹ stopped";el.style.color="var(--dim)";return;}
+  const items=(r.items||[]).filter(i=>i.enabled!==false); if(!items.length)return;
+  const cyc=items.reduce((a,i)=>a+i.seconds*1000,0);
+  const el2=(r.paused?new Date(r.paused_at):Date.now())-new Date(r.started_at);
+  let pos=((el2%cyc)+cyc)%cyc, idx=0, rem=0, acc=0;
+  for(let k=0;k<items.length;k++){ if(pos<acc+items[k].seconds*1000){idx=k;rem=acc+items[k].seconds*1000-pos;break;} acc+=items[k].seconds*1000; }
+  const sc=ST.scenes.find(s=>s.id===items[idx].sceneId);
+  const l=Math.round(rem/1000);
+  el.textContent=(r.paused?"⏸ PAUSED — ":"▶ ")+(sc?sc.name:"?")+" — "+Math.floor(l/60)+":"+String(l%60).padStart(2,"0")+" left";
+  el.style.color=r.paused?"#d4a017":"var(--green)"; }
+window.presetSave=async()=>{ const n=prompt("Preset name:"); if(!n||!n.trim())return;
+  await sb.from("rotation_presets").upsert({name:n.trim(),items:ST.rotation.items||[]}); load(); };
+window.presetLoad=async n=>{ if(!confirm("Replace rotation list with '"+n+"'?"))return;
+  const {data}=await sb.from("rotation_presets").select("*").eq("name",n).single();
+  if(data) await sb.from("rotation").update({items:data.items}).eq("id","main"); load(); };
+window.presetDel=async n=>{ if(!confirm("Delete preset '"+n+"'?"))return;
+  await sb.from("rotation_presets").delete().eq("name",n); load(); };
+
+/* ---------- settings + links ---------- */
+window.saveSettings=async()=>{
+  const d=Object.assign({},ST.settings.data||{},{fit:setFit.value,bannerCropPx:+setCrop.value||0,prewarmEnabled:setPrewarm.checked});
+  delete d._identify;
+  await sb.from("settings").update({data:d,updated_at:new Date().toISOString()}).eq("id","main");
+  load(); alert("Settings saved. Screens update automatically."); };
+function paintLinks(){
+  const L=screens.map(s=>C.SITE+"/player.html?s="+s+"&k="+C.SCREEN_KEY).join("\n");
+  linksBox.value=L;
+  const w=C.SITE+"/wall.html?k="+C.SCREEN_KEY;
+  wallLink.textContent=w; wallLink.href=w; }
+window.copyLinks=()=>{ linksBox.select(); document.execCommand("copy"); alert("21 links copied."); };
+</script>
+</body>
+</html>

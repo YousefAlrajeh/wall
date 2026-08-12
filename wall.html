@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>ECC Wall View</title>
+<script src="config.js"></script>
+<style>
+ html,body{margin:0;height:100%;background:#000}
+ #g{display:grid;grid-template-columns:repeat(7,1fr);grid-template-rows:repeat(3,1fr);gap:2px;width:100vw;height:100vh}
+ .t{position:relative;background:#050a08;overflow:hidden}
+ .t iframe{border:0;width:400%;height:400%;transform:scale(.25);transform-origin:0 0;pointer-events:none}
+ .tag{position:absolute;left:4px;top:3px;z-index:2;color:#39c98e;font:600 10px Segoe UI,sans-serif;
+      background:rgba(0,0,0,.55);padding:1px 5px;border-radius:4px}
+</style></head><body>
+<div id="g"></div>
+<script>
+const C=window.WALLCFG;
+const qs=new URLSearchParams(location.search); const K=qs.get("k")||"";
+const g=document.getElementById("g");
+for(let r=1;r<=3;r++)for(let c=1;c<=7;c++){
+  const s="R"+r+"C"+c;
+  const d=document.createElement("div");d.className="t";
+  d.innerHTML='<span class="tag">'+s+'</span><iframe loading="lazy" src="player.html?s='+s+'&k='+encodeURIComponent(K)+'&mirror=1"></iframe>';
+  g.appendChild(d);
+}
+</script></body></html>
