@@ -235,8 +235,10 @@ function subscribe(){
     .on("postgres_changes",{event:"*",schema:"public",table:"scenes"},()=>loadAll().then(tick))
     .on("postgres_changes",{event:"*",schema:"public",table:"content"},()=>loadAll().then(tick))
     .on("postgres_changes",{event:"*",schema:"public",table:"settings"},p=>{
-        if(p.new){SETTINGS=Object.assign({},p.new.data||{});SETTINGS._screen_key=p.new.screen_key;
-          if(p.new.data&&p.new.data._identify){identifyFlash();} lastShownKey=null;tick();}})
+        if(p.new){const wasId=(SETTINGS._identify_seen===((p.new.data||{})._identify));
+          SETTINGS=Object.assign({},p.new.data||{});SETTINGS._screen_key=p.new.screen_key;
+          if(SETTINGS._identify&&!wasId){SETTINGS._identify_seen=SETTINGS._identify;identifyFlash();}
+          currentUrl=null; lastShownKey=null; tick(); /* re-render with new fit/crop instantly */}})
     .subscribe();
 }
 function identifyFlash(){ const d=document.getElementById("identify");
