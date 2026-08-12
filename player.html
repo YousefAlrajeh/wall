@@ -162,9 +162,15 @@ function prewarm(cmd){
 }
 
 /* ---------- deciding what to show (clock-math rotation) ---------- */
+function imgWrap(u){ /* full-bleed page for direct image links (logo slices, photos) */
+  return "data:text/html;charset=utf-8,"+encodeURIComponent(
+    '<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%;background:#000;overflow:hidden}img{position:fixed;inset:0;width:100vw;height:100vh;object-fit:fill}</style></head><body><img src="'+u+'"></body></html>');
+}
+function isImg(u){return /\.(png|jpe?g|gif|webp)(\?|$)/i.test(u||"")||/^data:image\//.test(u||"");}
 function cmdFor(contentId,extra){
   const c=cById(contentId); if(!c) return null;
   const pbi=isPbi(c.url);
+  if(!pbi&&isImg(c.url)) return Object.assign({url:imgWrap(c.url),contentId:c.id,tokenEmbed:false,settleMs:c.settle_ms??500,cropTop:0,effectMs:900},extra||{});
   return Object.assign({url:c.url,contentId:c.id,tokenEmbed:pbi,
     settleMs:c.settle_ms??(pbi?3000:800),
     cropTop:pbi?(SETTINGS.bannerCropPx??0):0,

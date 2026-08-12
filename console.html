@@ -234,32 +234,40 @@ window.renameContent=async id=>{ const c=ST.content.find(x=>x.id===id);
   await sb.from("content").update({name:n.trim()||c.name}).eq("id",id); load(); };
 window.delContent=async id=>{ if(!confirm("Delete this content?"))return;
   await sb.from("content").delete().eq("id",id); load(); };
+async function storeFile(path,f){
+  const up=await sb.storage.from("media").upload(path,f,{upsert:true,cacheControl:"3600"});
+  if(up.error) throw up.error;
+  return sb.storage.from("media").getPublicUrl(path).data.publicUrl;
+}
 window.addImage=async()=>{ const f=imgFile.files[0]; if(!f)return alert("Choose an image first.");
   const name=prompt("Name:",f.name.replace(/\.[^.]+$/,"")); if(name===null)return;
-  const dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});
-  await sb.from("content").insert({id:uid("c"),name:name.trim()||"Image",url:dataUrl});
+  try{
+    const url=await storeFile("img/"+Date.now()+"-"+f.name.replace(/[^\w.\-]/g,"_"),f);
+    await sb.from("content").insert({id:uid("c"),name:name.trim()||"Image",url});
+  }catch(e){ alert("Upload failed: "+(e.message||e)); return; }
   imgFile.value=""; load(); alert("Image added."); };
 function screenFromName(fn){ let m=fn.match(/r([1-3])c([1-7])/i); if(m)return "R"+m[1]+"C"+m[2];
   m=fn.match(/(\d{1,2})/); if(m){const n=+m[1]; if(n>=1&&n<=21){return "R"+Math.ceil(n/7)+"C"+(((n-1)%7)+1);}} return null; }
 window.uploadSlices=async()=>{
   const files=[...sliceFiles.files]; if(!files.length)return alert("Select all 21 slice files.");
   const map={},un=[];
-  for(const f of files){const s=screenFromName(f.name); if(s)map[s]=f; else un.push(f.name);}
+  for(const f of files){const s2=screenFromName(f.name); if(s2)map[s2]=f; else un.push(f.name);}
   if(un.length)return alert("Can't match these to screens:\n"+un.join("\n"));
-  const cmap={};
-  let done=0;
-  for(const [s,f] of Object.entries(map)){
-    const dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});
-    const name="Logo "+s;
-    const old=ST.content.find(c=>c.name===name);
-    if(old){ await sb.from("content").update({url:dataUrl}).eq("id",old.id); cmap[s]=old.id; }
-    else { const id=uid("c"); await sb.from("content").insert({id,name,url:dataUrl}); cmap[s]=id; }
-    done++; rotStatus.textContent="Uploading "+done+"/"+Object.keys(map).length;
-  }
-  const oldSc=ST.scenes.find(s=>s.name==="Giant Logo");
-  if(oldSc) await sb.from("scenes").delete().eq("id",oldSc.id);
-  await sb.from("scenes").insert({id:uid("s"),name:"Giant Logo",map:cmap});
-  load(); alert("Giant Logo scene ready."); };
+  const cmap={}; let done=0;
+  try{
+    for(const [scr,f] of Object.entries(map)){
+      const url=await storeFile("logo/"+scr+".png",f);
+      const name="Logo "+scr;
+      const old=ST.content.find(c=>c.name===name);
+      if(old){ await sb.from("content").update({url}).eq("id",old.id); cmap[scr]=old.id; }
+      else { const id=uid("c"); await sb.from("content").insert({id,name,url}); cmap[scr]=id; }
+      done++; rotStatus.textContent="Uploading "+done+"/"+Object.keys(map).length;
+    }
+  }catch(e){ alert("Upload failed at "+done+": "+(e.message||e)); return; }
+  const oldSc=ST.scenes.find(s2=>s2.name==="Giant Logo");
+  if(oldSc) await sb.from("scenes").update({map:cmap}).eq("id",oldSc.id); /* keep id: rotation stays linked */
+  else await sb.from("scenes").insert({id:uid("s"),name:"Giant Logo",map:cmap});
+  load(); alert("Giant Logo scene ready ("+done+" slices)."); };
 
 /* ---------- scenes ---------- */
 window.saveScene=async()=>{ const name=sName.value.trim(); if(!name)return alert("Give the scene a name");
