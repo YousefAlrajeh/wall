@@ -49,6 +49,15 @@ const sb = createClient(C.SUPA_URL, C.SUPA_KEY);
 /* ---------- state ---------- */
 let SETTINGS={}, SCENES=[], CONTENT=[], ROT=null, ASSIGN=null;
 let gen=0, currentUrl=null, lastCmd=null;
+let CLOCK_OFFSET=0; /* serverNow - localNow: every screen shares one clock */
+const NOW=()=>Date.now()+CLOCK_OFFSET;
+async function syncClock(){
+  try{ const t0=Date.now();
+    const r=await fetch(C.TOKEN_FN+"?now=1"); const j=await r.json();
+    const rtt=Date.now()-t0;
+    CLOCK_OFFSET=(j.now+rtt/2)-Date.now();
+  }catch(e){}
+}
 const bufs={a:{el:bufA,ifr:ifrA,pbi:pbiA,id:"a"},b:{el:bufB,ifr:ifrB,pbi:pbiB,id:"b"}};
 let front=bufs.a, back=bufs.b;
 const WARM={a:null,b:null}, WARMLOADING={a:null,b:null};
@@ -236,14 +245,18 @@ function rotationNow(){
   const cycle=items.reduce((a,i)=>a+(i.seconds||30)*1000,0);
   let elapsed;
   if(ROT.paused){ elapsed=(new Date(ROT.paused_at||ROT.started_at)-new Date(ROT.started_at)); }
-  else elapsed=Date.now()-new Date(ROT.started_at).getTime();
+  else elapsed=NOW()-new Date(ROT.started_at).getTime();
   let pos=((elapsed%cycle)+cycle)%cycle;
   for(const it of items){ const d=(it.seconds||30)*1000;
     if(pos<d) return {item:it,remain:d-pos,items,idx:items.indexOf(it)};
     pos-=d; }
   return {item:items[0],remain:(items[0].seconds||30)*1000,items,idx:0};
 }
-let lastShownKey=null;
+let lastShownKey=null, flipTimer=null;
+function scheduleFlip(remain){
+  if(flipTimer) clearTimeout(flipTimer);
+  flipTimer=setTimeout(()=>{ flipTimer=null; tick(); }, Math.max(20,remain+15));
+}
 function tick(){
   const r=rotationNow();
   if(r){
@@ -253,7 +266,10 @@ function tick(){
     if(cid&&key!==lastShownKey){
       const cmd=cmdFor(cid,{effect:r.item.transition,speed:r.item.speed});
       if(cmd){lastShownKey=key;show(cmd);} }
-    if(r.remain<25000&&!ROT.paused){
+    if(!ROT.paused) scheduleFlip(r.remain);
+    /* prewarm the NEXT scene early in THIS slot: maximum head start */
+    const slotMs=(r.item.seconds||30)*1000;
+    if(!ROT.paused && r.remain < slotMs-5000){
       const nx=r.items[(r.idx+1)%r.items.length];
       const sc2=SCENES.find(s=>s.id===nx.sceneId);
       const cid2=sc2&&sc2.map&&sc2.map[SCREEN];
@@ -291,9 +307,12 @@ function subscribe(){
     .on("postgres_changes",{event:"*",schema:"public",table:"content"},()=>loadAll().then(tick))
     .on("postgres_changes",{event:"*",schema:"public",table:"settings"},p=>{
         if(p.new){const wasId=(SETTINGS._identify_seen===((p.new.data||{})._identify));
+          const oldSig=JSON.stringify({f:SETTINGS.fit,c:SETTINGS.bannerCropPx,d:SETTINGS.dateFilter});
           SETTINGS=Object.assign({},p.new.data||{});SETTINGS._screen_key=p.new.screen_key;
           if(SETTINGS._identify&&!wasId){SETTINGS._identify_seen=SETTINGS._identify;identifyFlash();}
-          currentUrl=null; lastShownKey=null; tick(); /* re-render with new fit/crop instantly */}})
+          const newSig=JSON.stringify({f:SETTINGS.fit,c:SETTINGS.bannerCropPx,d:SETTINGS.dateFilter});
+          if(oldSig!==newSig){ currentUrl=null; lastShownKey=null; }
+          tick(); /* visual settings re-render; identify and the rest leave warm layers alive */}})
     .subscribe();
 }
 function identifyFlash(){ const d=document.getElementById("identify");
@@ -301,6 +320,7 @@ function identifyFlash(){ const d=document.getElementById("identify");
 
 /* ---------- boot ---------- */
 (async()=>{
+  await syncClock(); setInterval(syncClock, 10*60000);
   try{ await loadAll(); }
   catch(e){ document.getElementById("keyerr").textContent="Cannot reach the wall database.\nCheck internet / setup."; 
     document.getElementById("keyerr").style.display="flex"; console.error(e); return; }
