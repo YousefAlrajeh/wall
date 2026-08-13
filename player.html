@@ -34,7 +34,7 @@
   <div class="buf" id="bufB"><iframe id="ifrB" allowfullscreen></iframe><div id="pbiB" style="width:100%;height:100%;display:none"></div></div>
 </div>
 <div id="boot"><div class="b1">DR. SULAIMAN AL HABIB — ECC WALL</div><div class="b2" id="bootId"></div>
-  <div class="spin"></div><div class="b3">Loading dashboard…</div></div>
+  <div class="spin"></div><div class="b3" id="bootWhy">Loading dashboard…</div></div>
 <div id="keyerr">Access key missing or wrong.<br>Check the screen link.</div>
 <div id="identify"></div>
 <script type="module">
@@ -254,7 +254,7 @@ function rotationNow(){
     pos-=d; }
   return {item:items[0],remain:(items[0].seconds||30)*1000,items,idx:0};
 }
-let lastShownKey=null, flipTimer=null;
+let lastShownKey=null, flipTimer=null, WHY="";
 function scheduleFlip(remain){
   if(flipTimer) clearTimeout(flipTimer);
   flipTimer=setTimeout(()=>{ flipTimer=null; tick(); }, Math.max(20,remain+15));
@@ -264,6 +264,10 @@ function tick(){
   if(r){
     const sc=SCENES.find(s=>s.id===r.item.sceneId);
     const cid=sc&&sc.map&&sc.map[SCREEN];
+    WHY = !sc ? "scene id "+r.item.sceneId.slice(0,8)+" MISSING"
+        : !cid ? "screen "+SCREEN+" NOT IN scene '"+(sc.name||"?")+"'"
+        : !cById(cid) ? "content "+cid.slice(0,10)+" DELETED (scene '"+(sc.name||"?")+"' points to it)"
+        : "";
     const key="rot:"+r.item.sceneId+":"+cid;
     if(cid&&key!==lastShownKey){
       const cmd=cmdFor(cid,{effect:r.item.transition,speed:r.item.speed});
@@ -326,6 +330,7 @@ if(DEBUG){ const d=document.createElement("div");
       +"\nwarm(back):"+((WARM[back.id]||{}).url||"-").slice(-38)
       +"\nloading:"+((WARMLOADING[back.id]||{}).url||"-").slice(-30)
       +"\nrot:"+(r?("idx "+r.idx+" remain "+Math.round(r.remain/1000)+"s"):"off")
+      +(WHY?"\nWHY NOTHING SHOWS: "+WHY:"")
       +"  offset:"+Math.round(CLOCK_OFFSET)+"ms"; },500); }
 function identifyFlash(){ const d=document.getElementById("identify");
   d.textContent=SCREEN; d.style.display="flex"; after(4000,()=>d.style.display="none"); }
@@ -342,6 +347,8 @@ function identifyFlash(){ const d=document.getElementById("identify");
   subscribe();
   tick();
   setInterval(tick,1000);
+  setInterval(()=>{ const b=document.getElementById("bootWhy");
+    if(b&&WHY) b.textContent="Waiting: "+WHY; },1500);
   setInterval(()=>loadAll().catch(()=>{}),20000); /* safety net if realtime hiccups */
   /* DATA refresh: re-query visuals on every live embed (visible + warm) */
   const refMin=Math.max(5,(SETTINGS.autoRefreshMinutes||10));
