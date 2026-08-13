@@ -173,7 +173,9 @@ async function load(){
   render();
 }
 window.load=load;
-function boot(){ rotTx.innerHTML=txOpts("fade"); load(); setInterval(load,8000); paintLinks(); setInterval(rotPaint,1000); }
+function boot(){ rotTx.innerHTML=txOpts("fade"); load();
+  setInterval(()=>{ if(!document.hidden) load(); },30000); /* light poll; actions refresh instantly anyway */
+  paintLinks(); setInterval(rotPaint,1000); }
 
 /* ---------- render ---------- */
 function render(){
