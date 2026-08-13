@@ -52,7 +52,7 @@ let gen=0, currentUrl=null, lastCmd=null;
 const bufs={a:{el:bufA,ifr:ifrA,pbi:pbiA,id:"a"},b:{el:bufB,ifr:ifrB,pbi:pbiB,id:"b"}};
 let front=bufs.a, back=bufs.b;
 const WARM={a:null,b:null}, WARMLOADING={a:null,b:null};
-let pbiReports={}, powerbiReady=null, warmGen=0;
+let pbiReports={}, pbiMeta={}, powerbiReady=null, warmGen=0;
 const cById=id=>CONTENT.find(x=>x.id===id);
 
 function hideBoot(){const b=document.getElementById("boot");if(b)b.style.display="none";}
@@ -138,7 +138,7 @@ async function embedPbi(b,cmd,onRendered){
       panes:{filters:{visible:false},pageNavigation:{visible:false}}}};
   if(cfg.pageName) conf.pageName=cfg.pageName;
   const rep=powerbi.embed(b.pbi,conf);
-  pbiReports[b.id]=rep;
+  pbiReports[b.id]=rep; pbiMeta[b.id]=cmd.contentId;
   applyCrop(b, cmd.cropTop||0);
   b.el.classList.toggle("fillw", SETTINGS.fit==="fill");
   rep.on("rendered",()=>onRendered&&onRendered());
@@ -293,6 +293,14 @@ function identifyFlash(){ const d=document.getElementById("identify");
   tick();
   setInterval(tick,1000);
   setInterval(()=>loadAll().catch(()=>{}),20000); /* safety net if realtime hiccups */
+  /* DATA refresh: re-query visuals on every live embed (visible + warm) */
+  const refMin=Math.max(5,(SETTINGS.autoRefreshMinutes||10));
+  setInterval(()=>{ Object.values(pbiReports).forEach(r=>{ try{ r.refresh().catch(()=>{});}catch(e){} }); },refMin*60000);
+  /* TOKEN renewal: fresh embed token long before expiry, for every live embed */
+  setInterval(()=>{ Object.keys(pbiReports).forEach(id=>{
+    const cid=pbiMeta[id]; if(!cid) return;
+    tokenConfig(cid).then(cfg=>{ try{ pbiReports[id].setAccessToken(cfg.token);}catch(e){} }).catch(()=>{});
+  }); },40*60000);
   /* daily reload for freshness at 03:00 */
   setInterval(()=>{const d=new Date();if(d.getHours()===3&&d.getMinutes()===0)location.reload();},60000);
 })();
