@@ -1,12 +1,12 @@
-/* ECC WALL v4.0 — baked configuration (Yousef / HMG) */
+/* ECC WALL v4.2 — baked configuration (Yousef / HMG) — fresh project ecc-wall-2 */
 window.WALLCFG = {
-  SUPA_URL: "https://skxwkqggvmhsqcvrdwwt.supabase.co",
-  SUPA_KEY: "sb_publishable_7Mgtov2hxILkXRt8VJ63lg_VBvRnAkl",
+  SUPA_URL: "https://ialtxnikhlwjivekagbk.supabase.co",
+  SUPA_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlhbHR4bmlraGx3aml2ZWthZ2JrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2MTg5MDQsImV4cCI6MjEwMjE5NDkwNH0.Q2KqlNE2ojUxDRr5on1sZDs4ysfEfOasoDeETRxam2U",
   SCREEN_KEY: "8b0egMStym9sb2srHCemBZ2a",
   SITE: "https://yousefalrajeh.github.io/wall",
   ROWS: 3, COLS: 7,
   PBI_SDK: "https://cdn.jsdelivr.net/npm/powerbi-client@2.23.1/dist/powerbi.min.js",
-  TOKEN_FN: "https://skxwkqggvmhsqcvrdwwt.supabase.co/functions/v1/pbi-token"
+  TOKEN_FN: "https://ialtxnikhlwjivekagbk.supabase.co/functions/v1/pbi-token"
 };
 window.WALLCFG.TX = [
   {id:"fade",label:"Crossfade"},
