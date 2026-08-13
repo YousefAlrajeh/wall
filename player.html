@@ -211,7 +211,9 @@ function coldLoad(cmd,g){
 function prewarm(cmd){
   if(SETTINGS.prewarmEnabled===false) return;
   if(WARM[back.id]&&WARM[back.id].url===cmd.url) return;
-  if(lastCmd&&currentUrl!==lastCmd.url) { after(2500,()=>prewarm(cmd)); return; }
+  const wl0=WARMLOADING[back.id];
+  if(wl0&&wl0.url===cmd.url&&Date.now()-wl0.startedAt<90000) return; /* already loading this: let it finish */
+  if(lastCmd&&currentUrl!==lastCmd.url) return; /* a real load is in flight; the next tick will retry */
   const wg=++warmGen,g0=gen;
   cleanBuf(back); WARMLOADING[back.id]={url:cmd.url,startedAt:Date.now()};
   if(cmd.tokenEmbed&&cmd.contentId){
@@ -267,7 +269,7 @@ function tick(){
       const cmd=cmdFor(cid,{effect:r.item.transition,speed:r.item.speed});
       if(cmd){lastShownKey=key;show(cmd);} }
     if(!ROT.paused) scheduleFlip(r.remain);
-    /* prewarm the NEXT scene early in THIS slot: maximum head start */
+    /* prewarm the NEXT scene early in THIS slot: maximum head start, once per slot */
     const slotMs=(r.item.seconds||30)*1000;
     if(!ROT.paused && r.remain < slotMs-5000){
       const nx=r.items[(r.idx+1)%r.items.length];
@@ -315,6 +317,16 @@ function subscribe(){
           tick(); /* visual settings re-render; identify and the rest leave warm layers alive */}})
     .subscribe();
 }
+const DEBUG=qs.get("debug")==="1";
+if(DEBUG){ const d=document.createElement("div");
+  d.id="dbg"; d.style.cssText="position:fixed;left:6px;bottom:6px;z-index:60;background:rgba(0,0,0,.75);color:#8ff5c2;font:11px Consolas,monospace;padding:6px 8px;border-radius:6px;max-width:60vw;white-space:pre";
+  document.body.appendChild(d);
+  setInterval(()=>{ const r=rotationNow();
+    d.textContent="front:"+(currentUrl||"-").slice(-38)
+      +"\nwarm(back):"+((WARM[back.id]||{}).url||"-").slice(-38)
+      +"\nloading:"+((WARMLOADING[back.id]||{}).url||"-").slice(-30)
+      +"\nrot:"+(r?("idx "+r.idx+" remain "+Math.round(r.remain/1000)+"s"):"off")
+      +"  offset:"+Math.round(CLOCK_OFFSET)+"ms"; },500); }
 function identifyFlash(){ const d=document.getElementById("identify");
   d.textContent=SCREEN; d.style.display="flex"; after(4000,()=>d.style.display="none"); }
 
