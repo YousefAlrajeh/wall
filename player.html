@@ -253,7 +253,7 @@ function tick(){
     if(cid&&key!==lastShownKey){
       const cmd=cmdFor(cid,{effect:r.item.transition,speed:r.item.speed});
       if(cmd){lastShownKey=key;show(cmd);} }
-    if(r.remain<9000&&!ROT.paused){
+    if(r.remain<25000&&!ROT.paused){
       const nx=r.items[(r.idx+1)%r.items.length];
       const sc2=SCENES.find(s=>s.id===nx.sceneId);
       const cid2=sc2&&sc2.map&&sc2.map[SCREEN];

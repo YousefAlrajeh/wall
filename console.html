@@ -236,10 +236,13 @@ function render(){
 /* ---------- wall ops ---------- */
 window.selAll=()=>{screens.forEach(s=>SEL.add(s));render();};
 window.doShow=async()=>{ if(!SEL.size)return alert("Click screens first.");
-  const cid=showSel.value;
-  for(const s of SEL) await sb.from("assignments").upsert({screen:s,kind:"content",content_id:cid,updated_at:new Date().toISOString()});
+  const cid=showSel.value, ts=new Date().toISOString();
+  await sb.from("assignments").upsert([...SEL].map(s=>({screen:s,kind:"content",content_id:cid,updated_at:ts})));
   load(); };
-window.doClear=async()=>{ for(const s of SEL) await sb.from("assignments").upsert({screen:s,kind:"clear",content_id:null,updated_at:new Date().toISOString()}); load(); };
+window.doClear=async()=>{ if(!SEL.size)return alert("Click screens first.");
+  const ts=new Date().toISOString();
+  await sb.from("assignments").upsert([...SEL].map(s=>({screen:s,kind:"clear",content_id:null,updated_at:ts})));
+  load(); };
 window.identify=async()=>{ const d=(ST.settings.data)||{}; d._identify=Date.now();
   await sb.from("settings").update({data:d,updated_at:new Date().toISOString()}).eq("id","main"); };
 
@@ -299,8 +302,9 @@ window.saveScene=async()=>{ const name=sName.value.trim(); if(!name)return alert
   sName.value=""; load(); alert("Scene '"+name+"' saved with "+Object.keys(map).length+" screens."); };
 async function load2(){ const {data}=await sb.from("assignments").select("*"); ST.assignments=data||[]; }
 window.activateScene=async id=>{ const s=ST.scenes.find(x=>x.id===id); if(!s)return;
-  for(const [scr,cid] of Object.entries(s.map||{}))
-    await sb.from("assignments").upsert({screen:scr,kind:"content",content_id:cid,updated_at:new Date().toISOString()});
+  const ts=new Date().toISOString();
+  const rows=Object.entries(s.map||{}).map(([scr,cid])=>({screen:scr,kind:"content",content_id:cid,updated_at:ts}));
+  if(rows.length) await sb.from("assignments").upsert(rows);
   load(); };
 window.delScene=async id=>{ if(!confirm("Delete scene?"))return;
   const rot=ST.rotation; if(rot&&(rot.items||[]).some(i=>i.sceneId===id)){
