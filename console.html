@@ -119,6 +119,14 @@
     <div class="row"><label style="width:150px">Default transition</label>
       <select id="setTx"></select>
       <select id="setSp"><option value="fast">Fast</option><option value="normal">Normal</option><option value="slow">Slow</option></select></div>
+    <div class="row" style="border-top:1px solid var(--line);padding-top:8px;margin-top:8px">
+      <label style="width:150px" title="Forces every dashboard to a rolling window that moves as days change">Date window</label>
+      <input id="dfOn" type="checkbox" style="width:auto"> <span class="muted">last</span>
+      <input id="dfCount" type="number" min="1" value="7" style="width:58px">
+      <select id="dfUnit"><option value="days">days</option><option value="weeks">weeks</option><option value="months">months</option><option value="years">years</option></select></div>
+    <div class="row"><label style="width:150px" class="muted">Date table / column</label>
+      <input id="dfTable" placeholder="Table (e.g. Calendar)" style="width:120px">
+      <input id="dfColumn" placeholder="Column (e.g. Date)" style="width:110px"></div>
     <div class="row"><label style="width:150px">Prewarm next scene</label>
       <input id="setPrewarm" type="checkbox" checked style="width:auto"></div>
     <div class="row"><button class="acc" onclick="saveSettings()">Save settings</button></div>
@@ -218,6 +226,8 @@ function render(){
   if(setTx.options.length===0) setTx.innerHTML=txOpts("fade");
   if(ST.settings){ const sd=ST.settings.data||{};
     setTx.value=sd.defaultTransition||"fade"; setSp.value=sd.defaultSpeed||"normal";
+    const df=sd.dateFilter||{}; dfOn.checked=!!df.enabled; dfCount.value=df.count||7;
+    dfUnit.value=df.unit||"days"; dfTable.value=df.table||""; dfColumn.value=df.column||"";
     setFit.value=(ST.settings.data||{}).fit||"fit";
     setCrop.value=(ST.settings.data||{}).bannerCropPx||0;
     setPrewarm.checked=(ST.settings.data||{}).prewarmEnabled!==false; }
@@ -360,7 +370,10 @@ window.presetDel=async n=>{ if(!confirm("Delete preset '"+n+"'?"))return;
 
 /* ---------- settings + links ---------- */
 window.saveSettings=async()=>{
-  const d=Object.assign({},ST.settings.data||{},{fit:setFit.value,bannerCropPx:+setCrop.value||0,prewarmEnabled:setPrewarm.checked,defaultTransition:setTx.value,defaultSpeed:setSp.value});
+  if(dfOn.checked&&(!dfTable.value.trim()||!dfColumn.value.trim()))
+    return alert("Date window needs the date Table and Column names from your report (see the guide note).");
+  const d=Object.assign({},ST.settings.data||{},{fit:setFit.value,bannerCropPx:+setCrop.value||0,prewarmEnabled:setPrewarm.checked,defaultTransition:setTx.value,defaultSpeed:setSp.value,
+    dateFilter:{enabled:dfOn.checked,count:Math.max(1,+dfCount.value||7),unit:dfUnit.value,table:dfTable.value.trim(),column:dfColumn.value.trim(),includeToday:true}});
   delete d._identify;
   await sb.from("settings").update({data:d,updated_at:new Date().toISOString()}).eq("id","main");
   load(); alert("Settings saved. Screens update automatically."); };

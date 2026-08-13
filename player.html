@@ -62,6 +62,23 @@ function loadSdk(){ if(powerbiReady) return powerbiReady;
   powerbiReady=new Promise(res=>{const s=document.createElement("script");s.src=C.PBI_SDK;s.onload=res;document.head.appendChild(s);});
   return powerbiReady; }
 
+function dateFilterArr(models){
+  const f=SETTINGS.dateFilter;
+  if(!f||!f.enabled||!f.table||!f.column||!(+f.count>0)) return [];
+  const unitMap={days:models.RelativeDateFilterTimeUnit.Days,
+    weeks:models.RelativeDateFilterTimeUnit.Weeks,
+    months:models.RelativeDateFilterTimeUnit.Months,
+    years:models.RelativeDateFilterTimeUnit.Years};
+  return [{
+    $schema:"http://powerbi.com/product/schema#relativeDate",
+    target:{table:f.table,column:f.column},
+    filterType:models.FilterType.RelativeDate,
+    operator:models.RelativeDateOperators.InLast,
+    timeUnitsCount:+f.count,
+    timeUnitType:unitMap[f.unit||"days"] ?? unitMap.days,
+    includeToday:f.includeToday!==false
+  }];
+}
 function resetView(b){ b.el.classList.remove("crop"); b.el.classList.remove("fillw"); b.el.style.removeProperty("--crop"); }
 function cleanBuf(b){
   WARM[b.id]=null; WARMLOADING[b.id]=null; resetView(b);
@@ -133,6 +150,7 @@ async function embedPbi(b,cmd,onRendered){
   try{powerbi.reset(b.pbi);}catch(e){}
   const conf={type:"report",id:cfg.reportId,embedUrl:cfg.embedUrl,accessToken:cfg.token,
     tokenType:models.TokenType.Embed,
+    filters:dateFilterArr(models),
     settings:{layoutType:models.LayoutType.Custom,
       customLayout:{displayOption:(SETTINGS.fit==="fill")?models.DisplayOption.FitToWidth:models.DisplayOption.FitToPage},
       panes:{filters:{visible:false},pageNavigation:{visible:false}}}};
