@@ -130,6 +130,10 @@
     <div class="row"><label style="width:150px">Prewarm next scene</label>
       <input id="setPrewarm" type="checkbox" checked style="width:auto"></div>
     <div class="row"><button class="acc" onclick="saveSettings()">Save settings</button></div>
+    <div class="row" style="border-top:1px solid var(--line);padding-top:8px;margin-top:8px">
+      <label style="width:150px">Microsoft sign-in</label>
+      <button onclick="msAuth()">🔑 Authorize Microsoft</button>
+      <span id="msStat" class="muted">checking…</span></div>
   </div>
 
   <div class="box links" style="grid-column:1/-1">
@@ -389,6 +393,30 @@ function paintLinks(){
   const w=C.SITE+"/wall.html?k="+C.SCREEN_KEY;
   wallLink.textContent=w; wallLink.href=w; }
 window.copyLinks=()=>{ linksBox.select(); document.execCommand("copy"); alert("21 links copied."); };
+
+/* ---------- Microsoft master-user authorization (device code) ---------- */
+async function msStatus(){ try{
+  const r=await fetch(C.TOKEN_FN+"?status=1&k="+C.SCREEN_KEY); const j=await r.json();
+  msStat.textContent=j.authorized?"✅ authorized":(j.revoked?"⛔ re-auth required":"⚠ not authorized yet");
+  msStat.style.color=j.authorized?"var(--green)":"#d4a017";
+}catch(e){ msStat.textContent="function unreachable"; } }
+window.msAuth=async()=>{
+  msStat.textContent="starting sign-in…";
+  const r=await fetch(C.TOKEN_FN+"?login=1&k="+C.SCREEN_KEY); const j=await r.json();
+  if(j.error){ alert("Could not start: "+j.error); return; }
+  window.open(j.verification_uri,"_blank");
+  alert("A Microsoft page opened.\n\n1) Enter this code:  "+j.user_code+"\n2) Sign in with the WALL account (the dedicated ECC user)\n3) Approve, then come back here — this window is waiting.");
+  msStat.textContent="waiting for you to finish sign-in… code: "+j.user_code;
+  const iv=setInterval(async()=>{
+    try{
+      const p=await fetch(C.TOKEN_FN+"?poll=1&k="+C.SCREEN_KEY); const pj=await p.json();
+      if(pj.ok){ clearInterval(iv); msStat.textContent="✅ authorized"; msStat.style.color="var(--green)";
+        alert("Microsoft authorization complete. The wall will pick it up automatically."); }
+      else if(pj.error){ clearInterval(iv); msStat.textContent="⚠ "+pj.error; }
+    }catch(e){}
+  }, (j.interval||5)*1000);
+};
+setTimeout(msStatus,1500); setInterval(msStatus,60000);
 </script>
 </body>
 </html>

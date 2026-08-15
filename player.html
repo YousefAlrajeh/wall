@@ -159,8 +159,14 @@ function runEffect(cmd,g){
 /* ---------- loading ---------- */
 async function tokenConfig(contentId){
   const r = await fetch(C.TOKEN_FN+"?content="+encodeURIComponent(contentId)+"&k="+encodeURIComponent(KEY));
-  if(!r.ok) throw new Error("token fn "+r.status);
-  return r.json();
+  let j=null; try{ j=await r.json(); }catch(e){}
+  if(!r.ok){
+    if(j&&j.error==="reauth_required"){ WHY="MICROSOFT RE-AUTH REQUIRED — open the console and click Authorize Microsoft"; throw new Error("reauth_required"); }
+    if(j&&j.error==="retry_later"){ WHY="Microsoft sign-in service busy — retrying automatically"; throw new Error("retry_later"); }
+    throw new Error("token fn "+r.status);
+  }
+  if(WHY&&(WHY.startsWith("MICROSOFT")||WHY.startsWith("Microsoft"))) WHY="";
+  return j;
 }
 async function embedPbi(b,cmd,onRendered){
   await loadSdk();
@@ -169,7 +175,7 @@ async function embedPbi(b,cmd,onRendered){
   b.ifr.style.display="none"; b.pbi.style.display="block";
   try{powerbi.reset(b.pbi);}catch(e){}
   const conf={type:"report",id:cfg.reportId,embedUrl:cfg.embedUrl,accessToken:cfg.token,
-    tokenType:models.TokenType.Embed,
+    tokenType:(cfg.tokenType==="Aad"?models.TokenType.Aad:models.TokenType.Embed),
     filters:dateFilterArr(models),
     settings:{layoutType:models.LayoutType.Custom,
       customLayout:{displayOption:(SETTINGS.fit==="fill")?models.DisplayOption.FitToWidth:models.DisplayOption.FitToPage},
