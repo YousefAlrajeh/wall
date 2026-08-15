@@ -400,7 +400,7 @@ async function msStatus(){ try{
   msStat.textContent=j.authorized?"✅ authorized":(j.revoked?"⛔ re-auth required":"⚠ not authorized yet");
   msStat.style.color=j.authorized?"var(--green)":"#d4a017";
 }catch(e){ msStat.textContent="function unreachable"; } }
-const MS_SCOPE="https://analysis.windows.net/powerbi/api/.default offline_access openid profile";
+const MS_SCOPE="https://analysis.windows.net/powerbi/api/Report.Read.All offline_access openid profile";
 const MS_TENANT="83fb7e1f-86fc-4c09-805b-f546be68ffa0";
 const MS_CLIENT="33d245d7-3950-406a-b526-2d14ab27cf41";
 function b64url(buf){return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");}
