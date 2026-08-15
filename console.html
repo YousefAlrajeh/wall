@@ -400,22 +400,38 @@ async function msStatus(){ try{
   msStat.textContent=j.authorized?"✅ authorized":(j.revoked?"⛔ re-auth required":"⚠ not authorized yet");
   msStat.style.color=j.authorized?"var(--green)":"#d4a017";
 }catch(e){ msStat.textContent="function unreachable"; } }
-window.msAuth=async()=>{
-  msStat.textContent="starting sign-in…";
-  const r=await fetch(C.TOKEN_FN+"?login=1&k="+C.SCREEN_KEY); const j=await r.json();
-  if(j.error){ alert("Could not start: "+j.error); return; }
-  window.open(j.verification_uri,"_blank");
-  alert("A Microsoft page opened.\n\n1) Enter this code:  "+j.user_code+"\n2) Sign in with the WALL account (the dedicated ECC user)\n3) Approve, then come back here — this window is waiting.");
-  msStat.textContent="waiting for you to finish sign-in… code: "+j.user_code;
-  const iv=setInterval(async()=>{
-    try{
-      const p=await fetch(C.TOKEN_FN+"?poll=1&k="+C.SCREEN_KEY); const pj=await p.json();
-      if(pj.ok){ clearInterval(iv); msStat.textContent="✅ authorized"; msStat.style.color="var(--green)";
-        alert("Microsoft authorization complete. The wall will pick it up automatically."); }
-      else if(pj.error){ clearInterval(iv); msStat.textContent="⚠ "+pj.error; }
-    }catch(e){}
-  }, (j.interval||5)*1000);
+const MS_SCOPE="https://analysis.windows.net/powerbi/api/.default offline_access openid profile";
+const MS_TENANT="83fb7e1f-86fc-4c09-805b-f546be68ffa0";
+const MS_CLIENT="33d245d7-3950-406a-b526-2d14ab27cf41";
+function b64url(buf){return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");}
+window.msAuth=async()=>{ /* normal browser sign-in (authorization code + PKCE) — the same flow as opening Fabric */
+  const v=b64url(crypto.getRandomValues(new Uint8Array(48)));
+  const ch=b64url(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(v)));
+  sessionStorage.setItem("pkce_v",v);
+  const ruri=location.origin+location.pathname;
+  sessionStorage.setItem("pkce_r",ruri);
+  location.href="https://login.microsoftonline.com/"+MS_TENANT+"/oauth2/v2.0/authorize"
+    +"?client_id="+MS_CLIENT+"&response_type=code&response_mode=query"
+    +"&redirect_uri="+encodeURIComponent(ruri)
+    +"&scope="+encodeURIComponent(MS_SCOPE)
+    +"&code_challenge="+ch+"&code_challenge_method=S256&prompt=select_account";
 };
+(async function msRedeem(){ /* returning from Microsoft with ?code= */
+  const p=new URLSearchParams(location.search);
+  const code=p.get("code");
+  if(!code) return;
+  history.replaceState({},"",location.pathname); /* clean the address bar */
+  const v=sessionStorage.getItem("pkce_v"), ruri=sessionStorage.getItem("pkce_r");
+  if(!v){ alert("Sign-in returned but the session was lost — click Authorize again."); return; }
+  try{
+    const r=await fetch(C.TOKEN_FN+"?redeem=1&k="+C.SCREEN_KEY
+      +"&code="+encodeURIComponent(code)+"&verifier="+encodeURIComponent(v)
+      +"&ruri="+encodeURIComponent(ruri));
+    const j=await r.json();
+    if(j.ok){ alert("✅ Microsoft authorization complete. The wall renews itself from here."); }
+    else alert("Authorization failed: "+(j.error||"unknown")+"\nClick Authorize Microsoft to retry.");
+  }catch(e){ alert("Authorization failed: "+e+"\nClick Authorize Microsoft to retry."); }
+})();
 setTimeout(msStatus,1500); setInterval(msStatus,60000);
 </script>
 </body>
