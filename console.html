@@ -111,6 +111,33 @@
   </div>
 
   <div class="box">
+    <h2>WALL SEQUENCER <span class="muted">(coordinated wave across the physical wall)</span></h2>
+    <div class="row"><label style="width:130px">Wall Sync</label>
+      <input id="wsOn" type="checkbox" style="width:auto">
+      <span class="muted">OFF = every screen flips together (today's behavior)</span></div>
+    <div class="row"><label style="width:130px">Wave shape</label>
+      <select id="wsMode">
+        <option value="columns">Columns (wave moves left→right)</option>
+        <option value="rows">Rows (wave moves top→bottom)</option>
+        <option value="all">One-by-one across all 21</option>
+      </select>
+      <label style="width:auto"><input id="wsRevO" type="checkbox" style="width:auto"> reverse direction</label></div>
+    <div class="row"><label style="width:130px">Custom order</label>
+      <input id="wsOrder" placeholder="optional, e.g. 1,7,4,2,6,3,5" style="flex:1">
+      <span class="muted">blank = natural order</span></div>
+    <div class="row"><label style="width:130px">Step delay (ms)</label>
+      <input id="wsStep" type="number" value="400" min="0" step="50" style="width:80px">
+      <label style="width:110px;text-align:right">In-group stagger</label>
+      <input id="wsStag" type="number" value="120" min="0" step="30" style="width:80px">
+      <label style="width:auto"><input id="wsRevG" type="checkbox" style="width:auto"> reverse in group</label></div>
+    <div class="row">
+      <button class="acc" onclick="wsSave()">Save wall sync</button>
+      <button onclick="forceSync()">⚡ Force Sync all screens</button></div>
+    <div class="wallgrid" id="wsMap" style="margin-top:8px"></div>
+    <div class="muted" id="wsHint" style="margin-top:4px"></div>
+  </div>
+
+  <div class="box">
     <h2>SETTINGS</h2>
     <div class="row"><label style="width:150px">Dashboard fill</label>
       <select id="setFit"><option value="fit">Fit (whole page)</option><option value="fill">Fill width</option></select></div>
@@ -229,6 +256,8 @@ function render(){
     for(const p of data) pl.insertAdjacentHTML("beforeend",
       `<li><span class="name">${p.name}</span><button onclick="presetLoad('${p.name}')">Load</button>
        <button onclick="presetDel('${p.name}')">✕</button></li>`);});
+  if(!wsMap.dataset.painted){ wsPaintControls(); wsMap.dataset.painted="1"; }
+  wsPaintMap();
   if(setTx.options.length===0) setTx.innerHTML=txOpts("fade");
   if(ST.settings){ const sd=ST.settings.data||{};
     setTx.value=sd.defaultTransition||"fade"; setSp.value=sd.defaultSpeed||"normal";
@@ -393,6 +422,46 @@ function paintLinks(){
   const w=C.SITE+"/wall.html?k="+C.SCREEN_KEY;
   wallLink.textContent=w; wallLink.href=w; }
 window.copyLinks=()=>{ linksBox.select(); document.execCommand("copy"); alert("21 links copied."); };
+
+/* ---------- Wall Sequencer ---------- */
+function wsCfg(){ const d=(ST.settings&&ST.settings.data)||{}; return d.wallSeq||{}; }
+function wsPaintControls(){ const w=wsCfg();
+  wsOn.checked=!!w.enabled; wsMode.value=w.mode||"columns";
+  wsOrder.value=Array.isArray(w.order)?w.order.join(","):"";
+  wsStep.value=w.stepMs??400; wsStag.value=w.staggerMs??120;
+  wsRevO.checked=!!w.reverseOrder; wsRevG.checked=!!w.reverseInGroup; wsMap.dataset.painted=""; }
+window.wsSave=async()=>{
+  const order=wsOrder.value.trim()?wsOrder.value.split(",").map(x=>+x.trim()).filter(n=>n>0):null;
+  const w={enabled:wsOn.checked,mode:wsMode.value,order,stepMs:Math.max(0,+wsStep.value||0),
+           staggerMs:Math.max(0,+wsStag.value||0),reverseOrder:wsRevO.checked,reverseInGroup:wsRevG.checked};
+  const d=Object.assign({},ST.settings.data||{},{wallSeq:w});
+  await sb.from("settings").update({data:d,updated_at:new Date().toISOString()}).eq("id","main");
+  load(); alert(w.enabled?"Wall Sync ON — flips now sweep across the wall.":"Wall Sync OFF — screens flip together as before."); };
+window.forceSync=async()=>{
+  const d=Object.assign({},ST.settings.data||{},{_forceSync:Date.now()});
+  await sb.from("settings").update({data:d,updated_at:new Date().toISOString()}).eq("id","main");
+  alert("Force Sync sent — every screen recomputes its correct state from the shared clock."); };
+function wsDelayFor(scr,w){ const m=scr.match(/^R([1-3])C([1-7])$/); if(!m)return 0;
+  const row=+m[1],col=+m[2]; let gi=0,pos=0,count=7;
+  if(w.mode==="rows"){count=3;gi=row-1;pos=col-1;}
+  else if(w.mode==="all"){count=1;gi=0;pos=(row-1)*7+(col-1);}
+  else {count=7;gi=col-1;pos=row-1;}
+  let order=Array.isArray(w.order)&&w.order.length?w.order.map(n=>+n-1):[...Array(count).keys()];
+  if(w.reverseOrder) order=[...order].reverse();
+  let oi=order.indexOf(gi); if(oi<0)oi=order.length;
+  if(w.reverseInGroup) pos=((w.mode==="rows")?7:(w.mode==="all"?21:3))-1-pos;
+  return oi*(w.stepMs??400)+pos*(w.staggerMs??0); }
+function wsPaintMap(){ const w=wsCfg(); const g=document.getElementById("wsMap"); if(!g)return;
+  g.innerHTML="";
+  let maxD=1; const ds={};
+  for(const s2 of screens){ ds[s2]=w.enabled?wsDelayFor(s2,w):0; maxD=Math.max(maxD,ds[s2]); }
+  for(const s2 of screens){ const d=document.createElement("div"); d.className="cell";
+    const t=ds[s2]/maxD;
+    d.style.background=w.enabled?("rgba(57,201,142,"+(0.85-0.7*t).toFixed(2)+")"):"#101c15";
+    d.style.color=w.enabled?"#06130d":"";
+    d.innerHTML="<b>"+s2+"</b><div class='cn'>"+(w.enabled?("+"+ds[s2]+"ms"):"—")+"</div>";
+    g.appendChild(d); }
+  wsHint.textContent=w.enabled?"Brighter = flips first. The wave takes "+maxD+"ms to cross the wall.":"Wall Sync is off — all screens flip at the same instant."; }
 
 /* ---------- Microsoft master-user authorization (device code) ---------- */
 async function msStatus(){ try{
