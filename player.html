@@ -176,8 +176,8 @@ function runEffect(cmd,g){
 }
 
 /* ---------- loading ---------- */
-async function tokenConfig(contentId){
-  const r = await fetch(C.TOKEN_FN+"?content="+encodeURIComponent(contentId)+"&k="+encodeURIComponent(KEY));
+async function tokenConfig(contentId,fresh){
+  const r = await fetch(C.TOKEN_FN+"?content="+encodeURIComponent(contentId)+"&k="+encodeURIComponent(KEY)+(fresh?"&fresh=1":""));
   let j=null; try{ j=await r.json(); }catch(e){}
   if(!r.ok){
     if(j&&j.error==="reauth_required"){ WHY="MICROSOFT RE-AUTH REQUIRED — open the console and click Authorize Microsoft"; throw new Error("reauth_required"); }
@@ -206,7 +206,8 @@ async function embedPbi(b,cmd,onRendered){
   b.el.classList.toggle("fillw", SETTINGS.fit==="fill");
   rep.on("rendered",()=>onRendered&&onRendered());
   rep.on("error",async ev=>{ console.error("pbi",ev&&ev.detail);
-    try{const c2=await tokenConfig(cmd.contentId); rep.setAccessToken(c2.token);}catch(e){}
+    try{const c2=await tokenConfig(cmd.contentId,true); await rep.setAccessToken(c2.token);
+        try{rep.refresh();}catch(_){} }catch(e){}
   });
   return rep;
 }
@@ -396,7 +397,8 @@ function identifyFlash(){ const d=document.getElementById("identify");
   /* TOKEN renewal: fresh embed token long before expiry, for every live embed */
   setInterval(()=>{ Object.keys(pbiReports).forEach(id=>{
     const cid=pbiMeta[id]; if(!cid) return;
-    tokenConfig(cid).then(cfg=>{ try{ pbiReports[id].setAccessToken(cfg.token);}catch(e){} }).catch(()=>{});
+    tokenConfig(cid,true).then(async cfg=>{ try{ await pbiReports[id].setAccessToken(cfg.token);}catch(e){} })
+      .catch(()=>{});
   }); },40*60000);
   /* daily reload for freshness at 03:00 */
   setInterval(()=>{const d=new Date();if(d.getHours()===3&&d.getMinutes()===0)location.reload();},60000);
