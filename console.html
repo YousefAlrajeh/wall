@@ -4,6 +4,8 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ECC Wall Console</title>
 <script src="config.js"></script>
+<script src="wall-layout.js"></script>
+<script>document.documentElement.style.setProperty("--wall-cols",WallLayout.COLS);</script>
 <style>
   :root{--bg:#0f1a15;--panel:#16241d;--line:#24382e;--ink:#dfeee6;--dim:#8fa89b;--green:#39c98e;--acc:#157347;--red:#c0392b}
   *{box-sizing:border-box}
@@ -22,7 +24,7 @@
   ul.clist{list-style:none;margin:8px 0 0;padding:0;max-height:290px;overflow:auto}
   ul.clist li{display:flex;gap:6px;align-items:center;background:#101c15;border:1px solid var(--line);border-radius:7px;padding:5px 8px;margin:4px 0}
   ul.clist .name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .wallgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-top:6px}
+  .wallgrid{display:grid;grid-template-columns:repeat(var(--wall-cols),1fr);gap:5px;margin-top:6px}
   .cell{background:#101c15;border:1px solid var(--line);border-radius:6px;padding:5px 4px;text-align:center;font-size:11px;cursor:pointer;user-select:none}
   .cell.sel{outline:2px solid var(--green)}
   .cell .cn{color:var(--dim);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -75,7 +77,7 @@
     <div class="row"><input type="file" id="imgFile" accept="image/*" style="font-size:12px">
       <button onclick="addImage()">Add image</button></div>
     <div class="row"><input type="file" id="sliceFiles" accept="image/*" multiple style="font-size:12px">
-      <button onclick="uploadSlices()">⬆ 21 logo slices → scene</button></div>
+      <button onclick="uploadSlices()">⬆ <span class="wcount">21</span> logo slices → scene</button></div>
     <ul class="clist" id="contentList"></ul>
   </div>
 
@@ -119,7 +121,7 @@
       <select id="wsMode">
         <option value="columns">Columns (wave moves left→right)</option>
         <option value="rows">Rows (wave moves top→bottom)</option>
-        <option value="all">One-by-one across all 21</option>
+        <option value="all" id="wsAllOpt">One-by-one across all 21</option>
       </select>
       <label style="width:auto"><input id="wsRevO" type="checkbox" style="width:auto"> reverse direction</label></div>
     <div class="row"><label style="width:130px">Custom order</label>
@@ -166,7 +168,7 @@
   <div class="box links" style="grid-column:1/-1">
     <h2>SCREEN LINKS (paste into Sidebar — key already included)</h2>
     <textarea id="linksBox" readonly></textarea>
-    <div class="row"><button onclick="copyLinks()">⧉ Copy all 21</button>
+    <div class="row"><button onclick="copyLinks()">⧉ Copy all <span class="wcount">21</span></button>
       <span class="muted">Wall view for monitoring: <a id="wallLink" target="_blank" style="color:var(--green)"></a></span></div>
   </div>
 
@@ -180,7 +182,22 @@ window.sb=sb;
 let ST={content:[],scenes:[],assignments:[],rotation:null,settings:null};
 window.SEL=new Set();
 const uid=p=>p+"_"+Math.random().toString(36).slice(2,9);
-const screens=[];for(let r=1;r<=C.ROWS;r++)for(let c=1;c<=C.COLS;c++)screens.push("R"+r+"C"+c);
+const screens=WallLayout.screens(); /* shape from wall-layout.js */
+document.querySelectorAll(".wcount").forEach(e=>e.textContent=String(WallLayout.COUNT));
+wsAllOpt.textContent="One-by-one across all "+WallLayout.COUNT;
+
+/* ---------- shared clock: canvasPages on only; otherwise this PC's clock exactly as before ---------- */
+let CCLOCK=null;
+const canvasOn=()=>!!(ST.settings&&ST.settings.data&&ST.settings.data.canvasPages===true);
+function CNOW(){ return (canvasOn()&&CCLOCK&&CCLOCK.isSynced())?CCLOCK.now():Date.now(); }
+function consoleClock(){ if(CCLOCK||!canvasOn()) return;
+  CCLOCK={isSynced:()=>false};
+  const s=document.createElement("script"); s.src="wall-clock.js";
+  s.onload=()=>{ const c=WallClock.create({url:String(C.SUPA_URL).replace(/\/$/,"")+"/functions/v1/clock",
+      headers:{apikey:C.SUPA_KEY,Authorization:"Bearer "+C.SUPA_KEY}});
+    c.start().then(()=>{CCLOCK=c;}).catch(()=>{}); };
+  document.head.appendChild(s); }
+window.ST_settings=()=>ST.settings; /* read-only view for console-labs.js */
 
 /* ---------- auth ---------- */
 window.doLogin=async()=>{
@@ -201,10 +218,13 @@ async function load(){
     sb.from("settings").select("*").eq("id","main").single()
   ]);
   ST={content:co.data||[],scenes:sc.data||[],assignments:as.data||[],rotation:ro.data,settings:se.data};
+  consoleClock();
   render();
 }
 window.load=load;
 function boot(){ rotTx.innerHTML=txOpts("fade"); load();
+  if(new URLSearchParams(location.search).get("labs")==="1"){ /* wall pages setup box, admins only, hidden otherwise */
+    const s=document.createElement("script"); s.src="console-labs.js"; document.head.appendChild(s); }
   setInterval(()=>{ if(!document.hidden) load(); },30000); /* light poll; actions refresh instantly anyway */
   paintLinks(); setInterval(rotPaint,1000); }
 
@@ -303,10 +323,9 @@ window.addImage=async()=>{ const f=imgFile.files[0]; if(!f)return alert("Choose 
     await sb.from("content").insert({id:uid("c"),name:name.trim()||"Image",url});
   }catch(e){ alert("Upload failed: "+(e.message||e)); return; }
   imgFile.value=""; load(); alert("Image added."); };
-function screenFromName(fn){ let m=fn.match(/r([1-3])c([1-7])/i); if(m)return "R"+m[1]+"C"+m[2];
-  m=fn.match(/(\d{1,2})/); if(m){const n=+m[1]; if(n>=1&&n<=21){return "R"+Math.ceil(n/7)+"C"+(((n-1)%7)+1);}} return null; }
+function screenFromName(fn){ return WallLayout.screenFromName(fn); } /* same matching as before */
 window.uploadSlices=async()=>{
-  const files=[...sliceFiles.files]; if(!files.length)return alert("Select all 21 slice files.");
+  const files=[...sliceFiles.files]; if(!files.length)return alert("Select all "+WallLayout.COUNT+" slice files.");
   const map={},un=[];
   for(const f of files){const s2=screenFromName(f.name); if(s2)map[s2]=f; else un.push(f.name);}
   if(un.length)return alert("Can't match these to screens:\n"+un.join("\n"));
@@ -365,7 +384,7 @@ window.rotDragStart=(e,i)=>{rotDragIdx=i;};
 window.rotDrop=(e,i)=>{e.preventDefault();if(rotDragIdx===null||rotDragIdx===i)return;
   const items=[...ST.rotation.items];const [m]=items.splice(rotDragIdx,1);items.splice(i,0,m);rotDragIdx=null;rotSave(items);};
 window.rotCtl=async x=>{
-  const r=ST.rotation, now=new Date();
+  const r=ST.rotation, now=new Date(CNOW()); /* shared clock when canvasPages is on, this PC clock otherwise (as before) */
   if(x==="start"){ if(!(r.items||[]).length)return alert("Add walls first.");
     await sb.from("rotation").update({active:true,paused:false,started_at:now.toISOString(),paused_at:null}).eq("id","main"); }
   if(x==="stop") await sb.from("rotation").update({active:false,paused:false}).eq("id","main");
@@ -392,7 +411,7 @@ function rotPaint(){ const el=document.getElementById("rotStatus"); const r=ST.r
   if(!r||!r.active){el.textContent="⏹ stopped";el.style.color="var(--dim)";return;}
   const items=(r.items||[]).filter(i=>i.enabled!==false); if(!items.length)return;
   const cyc=items.reduce((a,i)=>a+i.seconds*1000,0);
-  const el2=(r.paused?new Date(r.paused_at):Date.now())-new Date(r.started_at);
+  const el2=(r.paused?new Date(r.paused_at):CNOW())-new Date(r.started_at);
   let pos=((el2%cyc)+cyc)%cyc, idx=0, rem=0, acc=0;
   for(let k=0;k<items.length;k++){ if(pos<acc+items[k].seconds*1000){idx=k;rem=acc+items[k].seconds*1000-pos;break;} acc+=items[k].seconds*1000; }
   const sc=ST.scenes.find(s=>s.id===items[idx].sceneId);
@@ -421,7 +440,7 @@ function paintLinks(){
   linksBox.value=L;
   const w=C.SITE+"/wall.html?k="+C.SCREEN_KEY;
   wallLink.textContent=w; wallLink.href=w; }
-window.copyLinks=()=>{ linksBox.select(); document.execCommand("copy"); alert("21 links copied."); };
+window.copyLinks=()=>{ linksBox.select(); document.execCommand("copy"); alert(WallLayout.COUNT+" links copied."); };
 
 /* ---------- Wall Sequencer ---------- */
 function wsCfg(){ const d=(ST.settings&&ST.settings.data)||{}; return d.wallSeq||{}; }
@@ -441,16 +460,7 @@ window.forceSync=async()=>{
   const d=Object.assign({},ST.settings.data||{},{_forceSync:Date.now()});
   await sb.from("settings").update({data:d,updated_at:new Date().toISOString()}).eq("id","main");
   alert("Force Sync sent — every screen recomputes its correct state from the shared clock."); };
-function wsDelayFor(scr,w){ const m=scr.match(/^R([1-3])C([1-7])$/); if(!m)return 0;
-  const row=+m[1],col=+m[2]; let gi=0,pos=0,count=7;
-  if(w.mode==="rows"){count=3;gi=row-1;pos=col-1;}
-  else if(w.mode==="all"){count=1;gi=0;pos=(row-1)*7+(col-1);}
-  else {count=7;gi=col-1;pos=row-1;}
-  let order=Array.isArray(w.order)&&w.order.length?w.order.map(n=>+n-1):[...Array(count).keys()];
-  if(w.reverseOrder) order=[...order].reverse();
-  let oi=order.indexOf(gi); if(oi<0)oi=order.length;
-  if(w.reverseInGroup) pos=((w.mode==="rows")?7:(w.mode==="all"?21:3))-1-pos;
-  return oi*(w.stepMs??400)+pos*(w.staggerMs??0); }
+function wsDelayFor(scr,w){ return WallLayout.waveDelay(scr,w,"console"); } /* same arithmetic as before */
 function wsPaintMap(){ const w=wsCfg(); const g=document.getElementById("wsMap"); if(!g)return;
   g.innerHTML="";
   let maxD=1; const ds={};

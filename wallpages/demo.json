@@ -1,0 +1,17 @@
+{
+  "id": "demo",
+  "title": "Wall page demo",
+  "figuresPage": "demo",
+  "background": { "angle": 100, "stops": ["#0d0614", "#2a1240 35%", "#3b1a5a 50%", "#2a1240 65%", "#0d0614"] },
+  "layers": [
+    { "type": "line", "fx1": 0, "fy1": 0.82, "fx2": 1, "fy2": 0.18, "width": 6, "color": "#9A6BBF", "alpha": 0.7 },
+    { "type": "line", "fx1": 0, "fy1": 0.5, "fx2": 1, "fy2": 0.5, "width": 2, "color": "#C98BEB", "alpha": 0.35 },
+    { "type": "rings", "fx": 0.5, "fy": 0.5, "r": [300, 520, 760], "degPerSec": 6, "width": 8, "color": "#E59BFF", "alpha": 0.85 }
+  ],
+  "tiles": [
+    { "screen": "R2C3", "x": 360, "y": 300, "w": 900, "h": 420, "kind": "number", "figure": "figureA", "label": "First figure (placeholder)" },
+    { "screen": "R2C5", "x": 660, "y": 300, "w": 900, "h": 420, "kind": "number", "figure": "figureB", "label": "Second figure (placeholder)", "decimals": 1, "unit": "min" },
+    { "screen": "R1C1", "x": 120, "y": 120, "w": 1100, "h": 260, "kind": "text", "label": "Wall page demo: layout only, figures come from the figures job" },
+    { "screen": "R3C7", "x": 900, "y": 300, "w": 900, "h": 620, "kind": "list", "figure": "listC", "label": "By city (placeholder)", "labelKey": "label", "valueKey": "value", "maxRows": 6 }
+  ]
+}
