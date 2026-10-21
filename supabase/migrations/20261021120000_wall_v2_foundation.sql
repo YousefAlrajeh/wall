@@ -1,0 +1,117 @@
+-- WS-wall21 phase 2: new objects only. NOT APPLIED. The lead takes it to the user before anything goes live.
+-- Existing tables (settings, content, scenes, rotation, assignments, rotation_presets) are not touched.
+-- Every new table: RLS on, nothing for anon. Only the server functions (service role) read or write them,
+-- except screen_health, which signed-in console admins may read.
+
+begin;
+
+-- Console admins allowed to start the Microsoft sign-in and enrol screens (rows added by hand in the dashboard).
+create table if not exists public.wall_admins (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  added_at timestamptz not null default now()
+);
+
+-- One device secret per screen PC; only its sha256 (64 hex) is stored.
+create table if not exists public.wall_devices (
+  screen text primary key check (screen ~ '^R[1-3]C[1-7]$'),
+  secret_hash text not null check (secret_hash ~ '^[0-9a-f]{64}$'),
+  enrolled_at timestamptz not null default now(),
+  revoked_at timestamptz
+);
+
+-- The latest checked figures snapshot (one row). Screens get it only through wall-feed.
+create table if not exists public.wall_figures (
+  id text primary key check (id = 'current'),
+  version integer not null check (version > 0),
+  data_as_of timestamptz not null,
+  fetched_at timestamptz not null,
+  pages jsonb not null,
+  updated_at timestamptz not null default now(),
+  constraint wall_figures_pages_size check (octet_length(pages::text) <= 65536)
+);
+
+-- One row per figures run: codes, counts and times only.
+create table if not exists public.wall_figures_runs (
+  id bigint generated always as identity primary key,
+  started_at timestamptz not null,
+  finished_at timestamptz not null,
+  mode text check (mode in ('check','full')),
+  result text not null check (result in ('SUCCESS','UNCHANGED','STOPPED')),
+  reason text check (reason is null or reason ~ '^[A-Z0-9_]{1,40}$'),
+  at jsonb,
+  queries integer, "rows" integer, bytes integer, ms integer
+);
+
+-- A device sign-in in progress (at most one, about 15 minutes).
+create table if not exists public.wall_reader_pending (
+  id text primary key check (id = 'main'),
+  device_code text not null,
+  expires_at timestamptz not null,
+  interval_s integer not null,
+  started_by uuid
+);
+
+-- Screen heartbeat, written by wall-feed: fixed codes and numbers only, never free text.
+create table if not exists public.screen_health (
+  screen text primary key check (screen ~ '^R[1-3]C[1-7]$'),
+  last_seen timestamptz not null,
+  state text check (state in ('showing','loading','waiting','error','clear','stale','nodata')),
+  error_code text check (error_code is null or error_code ~ '^[A-Z_]{1,32}$'),
+  showing text check (showing is null or showing ~ '^[A-Za-z0-9_:.-]{1,64}$'),
+  clock_offset_ms integer,
+  clock_rtt_ms integer,
+  feed_version integer,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.wall_admins enable row level security;
+alter table public.wall_devices enable row level security;
+alter table public.wall_figures enable row level security;
+alter table public.wall_figures_runs enable row level security;
+alter table public.wall_reader_pending enable row level security;
+alter table public.screen_health enable row level security;
+
+revoke all on public.wall_admins, public.wall_devices, public.wall_figures, public.wall_figures_runs,
+  public.wall_reader_pending, public.screen_health from anon, authenticated, public;
+
+-- Admins may read the health grid, nothing else.
+grant select on public.screen_health to authenticated;
+create policy screen_health_admin_read on public.screen_health for select to authenticated
+  using (exists (select 1 from public.wall_admins a where a.user_id = auth.uid()));
+
+-- The refresh token of 'HMG Wall Reader' lives in Supabase Vault under the name 'wall_reader_refresh_token'.
+-- These three functions are the only way to it, and only the service role may call them.
+create or replace function public.wall_reader_token_get() returns text
+language sql security definer set search_path = '' as $$
+  select decrypted_secret from vault.decrypted_secrets where name = 'wall_reader_refresh_token' limit 1;
+$$;
+
+create or replace function public.wall_reader_token_exists() returns boolean
+language sql security definer set search_path = '' as $$
+  select exists (select 1 from vault.secrets where name = 'wall_reader_refresh_token');
+$$;
+
+create or replace function public.wall_reader_token_set(new_token text) returns void
+language plpgsql security definer set search_path = '' as $$
+declare sid uuid;
+begin
+  if new_token is null or length(new_token) < 20 or length(new_token) > 8192 then
+    raise exception 'bad value';
+  end if;
+  select id into sid from vault.secrets where name = 'wall_reader_refresh_token' limit 1;
+  if sid is null then
+    perform vault.create_secret(new_token, 'wall_reader_refresh_token', 'HMG Wall Reader refresh token');
+  else
+    perform vault.update_secret(sid, new_token);
+  end if;
+end;
+$$;
+
+revoke all on function public.wall_reader_token_get() from public, anon, authenticated;
+revoke all on function public.wall_reader_token_exists() from public, anon, authenticated;
+revoke all on function public.wall_reader_token_set(text) from public, anon, authenticated;
+grant execute on function public.wall_reader_token_get() to service_role;
+grant execute on function public.wall_reader_token_exists() to service_role;
+grant execute on function public.wall_reader_token_set(text) to service_role;
+
+commit;
