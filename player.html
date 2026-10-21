@@ -59,7 +59,7 @@ const DEVICE=(()=>{ const st=safeStorage(), k="wallDevice."+SCREEN;
   try{ return (st&&st.getItem(k))||""; }catch(e){ return ""; } })();
 /* this page session (proof for the console that the PC kept its secret after a restart) */
 const SID=(()=>{ try{ return [...crypto.getRandomValues(new Uint8Array(8))].map(b=>b.toString(16).padStart(2,"0")).join(""); }catch(e){ return ""; } })();
-let STOP=false, LEGACY_FN=false;
+let STOP=false, LEGACY_FN=false, RELOAD_SEEN;
 
 /* ---------- state ---------- */
 let SETTINGS={}, SCENES=[], CONTENT=[], ROT=null, ASSIGN=null;
@@ -188,11 +188,12 @@ function runEffect(cmd,g){
 function tokenPost(body){ return fetch(C.TOKEN_FN,{method:"POST",headers:{"Content-Type":"text/plain"},body:JSON.stringify(body)}); }
 function tokenGet(contentId,fresh){ return fetch(C.TOKEN_FN+"?content="+encodeURIComponent(contentId)+"&k="+encodeURIComponent(KEY)+(fresh?"&fresh=1":"")); }
 async function tokenConfig(contentId,fresh){
-  let r = LEGACY_FN ? await tokenGet(contentId,fresh) : await tokenPost({content:contentId,s:SCREEN,k:KEY,d:DEVICE,fresh:!!fresh});
+  const viaGet=LEGACY_FN; /* decide by the form THIS request used (the background check may switch it meanwhile) */
+  let r = viaGet ? await tokenGet(contentId,fresh) : await tokenPost({content:contentId,s:SCREEN,k:KEY,d:DEVICE,fresh:!!fresh});
   let j=null; try{ j=await r.json(); }catch(e){}
-  if(!LEGACY_FN&&r.status===403&&j&&j.error==="bad key"&&SETTINGS._screen_key){ /* token function not updated yet: old request form from now on */
-    LEGACY_FN=true; r = await tokenGet(contentId,fresh);
-    j=null; try{ j=await r.json(); }catch(e){} }
+  if(!viaGet&&r.status===403&&j&&j.error==="bad key"){ /* maybe the old function is live (deployed first, or put back): old request form */
+    const r2 = await tokenGet(contentId,fresh); let j2=null; try{ j2=await r2.json(); }catch(e){}
+    if(!(r2.status===403&&j2&&j2.error==="bad key")){ LEGACY_FN=true; r=r2; j=j2; } }
   if(!r.ok){
     if(j&&j.error==="not_enrolled"){ enrolNotice(true); WHY="screen not set up: reports need this PC's one-time link"; throw new Error("not_enrolled"); }
     if(j&&j.error==="account_mismatch"){ WHY="Microsoft sign-in is not the expected account: ask an admin to check the console"; throw new Error("account_mismatch"); }
@@ -427,6 +428,7 @@ async function loadAll(){
   ]);
   if(se.error) throw se.error;
   SETTINGS=Object.assign({},se.data.data||{}); SETTINGS._screen_key=se.data.screen_key;
+  if(RELOAD_SEEN===undefined) RELOAD_SEEN=SETTINGS._reloadAt; /* only a newer "Reload all screens" reloads this page */
   CONTENT=co.data||[]; SCENES=sc.data||[]; ROT=ro.data; ASSIGN=as.data;
 }
 function subscribe(){
@@ -445,6 +447,7 @@ function subscribe(){
           const newSig=JSON.stringify({f:SETTINGS.fit,c:SETTINGS.bannerCropPx,d:SETTINGS.dateFilter});
           if(oldSig!==newSig){ currentUrl=null; lastShownKey=null; }
           if(SETTINGS.canvasPages===true||CANVAS.on) canvasCheck();
+          if(SETTINGS._reloadAt&&SETTINGS._reloadAt!==RELOAD_SEEN&&qs.get("mirror")!=="1"){ location.reload(); return; }
           tick(); /* visual settings re-render; identify and the rest leave warm layers alive */}})
     .subscribe();
 }
@@ -463,9 +466,14 @@ if(DEBUG){ const d=document.createElement("div");
 /* ---------- screen enrolment and key check (brief step 2) ---------- */
 async function screenCheck(){
   try{
-    const r=await tokenPost({action:"check",s:SCREEN,k:KEY,d:DEVICE,sid:SID});
+    const r=await tokenPost({action:"check",s:SCREEN,k:KEY,d:DEVICE,sid:(qs.get("mirror")==="1"?"":SID)});
     let j=null; try{ j=await r.json(); }catch(e){}
-    if(r.status===403&&j&&j.error==="bad key"){ if(!SETTINGS._screen_key) refuseKey(); else LEGACY_FN=true; return; } /* old function: local check already decided */
+    if(r.status===403&&j&&j.error==="bad key"){
+      if(SETTINGS._screen_key){ LEGACY_FN=true; return; } /* key cell present: the local check already decided (old function) */
+      /* cell empty: refuse only if the old request form says the same (the old function answers "bad key" to every new-form call) */
+      const r2=await fetch(C.TOKEN_FN+"?content=__keycheck__&k="+encodeURIComponent(KEY)); let j2=null; try{ j2=await r2.json(); }catch(e){}
+      if(r2.status===403&&j2&&j2.error==="bad key"){ if(!SETTINGS._screen_key) refuseKey(); return; }
+      LEGACY_FN=true; return; }
     /* the notice appears on screens only once enforcement is on; before that the console shows who is not set up */
     if(r.ok&&j&&j.key===true&&j.enrolled===false&&j.required===true) enrolNotice(true);
   }catch(e){}

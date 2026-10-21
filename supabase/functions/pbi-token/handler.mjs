@@ -15,7 +15,7 @@
 // Residual risk (unchanged by design): an enrolled screen PC still receives the stored account's
 // Aad token (Report.Read.All); anyone who takes the device secret out of that PC's browser can too.
 import { checkScreen, checkAdmin, safeEqual, SCREEN_ID_RE } from "../_shared/device.mjs";
-import { json, preflight, readJson, bearer, originAllowed } from "../_shared/http.mjs";
+import { json, preflight, readJson, bearer, originAllowed, originState } from "../_shared/http.mjs";
 import { claims, tenantMatches } from "../_shared/ms.mjs";
 
 const SCOPE = "https://analysis.windows.net/powerbi/api/Report.Read.All offline_access openid profile";
@@ -104,8 +104,10 @@ export async function handle(req, ctx) {
   const { env, db } = ctx;
   ctx.mem = ctx.mem || { at: null, rep: new Map() };
   if (req.method === "OPTIONS") return preflight(req, env);
-  if (!originAllowed(req, env)) return json(req, env, 403, { error: "denied" });
   const required = env.WALL_REQUIRE_DEVICE === "1";
+  // origin: an empty or invalid WALL_ALLOWED_ORIGINS fails open only in compatibility mode (status warns);
+  // once screens must be set up, it must be exactly the site origin or browser requests are refused
+  if (!originAllowed(req, env, required)) return json(req, env, 403, { error: "denied" });
   try {
     const q = new URL(req.url).searchParams;
     if (q.get("now")) return json(req, env, 200, { now: ctx.now() });
@@ -132,7 +134,7 @@ export async function handle(req, ctx) {
         let match = null;
         if (ms && ms.refresh_token) { try { match = accountMatches(env, await userToken(ctx, false)); } catch (_) { match = null; } }
         return json(req, env, 200, { authorized: !!(ms && ms.refresh_token), revoked: !!(ms && ms.revoked_at), accountMatches: match,
-          accountEnforced: enforceAccount(env), deviceRequired: required });
+          accountEnforced: enforceAccount(env), deviceRequired: required, originCheck: originState(env).state });
       }
       // redeem (browser sign-in with PKCE), admin only, expected account only
       if (!env.PBI_EXPECTED_OID) return json(req, env, 400, { error: "account_check_not_set_up" });

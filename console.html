@@ -178,7 +178,8 @@
     <div class="row"><select id="enScr" style="font-size:14px"></select>
       <button onclick="enrolMake()" style="font-size:14px">Make the link for this screen</button>
       <button onclick="enrolList()" style="font-size:14px">Refresh list</button>
-      <button onclick="restartCheck()" style="font-size:14px">Start restart check</button></div>
+      <button onclick="restartCheck()" style="font-size:14px">Start restart check</button>
+      <button onclick="reloadAll()" style="font-size:14px">Reload all screens</button></div>
     <input id="enLink" readonly style="width:100%;font-size:14px">
     <div id="enNote" style="font-size:14px;margin-top:4px"></div>
     <div class="wallgrid" id="enGrid" style="margin-top:8px"></div>
@@ -454,12 +455,19 @@ window.saveSettings=async()=>{
 const ENROL_FN=String(C.SUPA_URL).replace(/\/$/,"")+"/functions/v1/wall-device-enroll";
 /* a screen counts as set up only when its PC has used its secret successfully in a page session after the
    link was made; after "Start restart check", only when it came back with it after the restart */
-function rcSince(){ try{ return +localStorage.getItem("wallRestartCheck")||0; }catch(e){ return 0; } }
-window.restartCheck=()=>{ if(!confirm("Start the restart check now? Then restart the ECC room PC and the Sidebar, and press Refresh list."))return;
-  try{ localStorage.setItem("wallRestartCheck",String(Date.now())); }catch(e){} enrolList(); };
+/* the restart check's start time is recorded by the SERVER (its clock), and only page sessions of the
+   screen PCs count (monitoring mirrors never record a session) */
+window.restartCheck=async()=>{ if(!confirm("Start the restart check now? Then restart the ECC room PC and the Sidebar, and press Refresh list."))return;
+  try{ await adminPost(ENROL_FN,{action:"restart_check_start"}); }catch(e){ enNote.textContent=e.message; enNote.style.color="#F0A04A"; return; } enrolList(); };
+/* every new player reloads itself once (settings.data._reloadAt); used before the step 3 and step 8 checks */
+window.reloadAll=async()=>{ if(!confirm("Reload every screen now? Each screen goes black for a few seconds and asks for fresh reports."))return;
+  const cur=await sb.from("settings").select("data").eq("id","main").single(); if(cur.error)return alert("Could not read the settings");
+  const d=Object.assign({},cur.data.data||{},{_reloadAt:Date.now()});
+  const up=await sb.from("settings").update({data:d,updated_at:new Date().toISOString()}).eq("id","main");
+  if(up.error) return alert("Could not send the reload"); alert("Reload sent. Screens reload within a few seconds."); };
 window.enrolList=async()=>{ try{
   const j=await adminPost(ENROL_FN,{action:"list"}); const g=document.getElementById("enGrid"); g.textContent="";
-  const since=rcSince(); let used=0, back=0;
+  const since=j.restart_check_at?Date.parse(j.restart_check_at):0; let used=0, back=0;
   for(const s2 of screens){ const d=(j.devices||[]).find(x=>x.screen===s2)||null;
     const made=d&&!d.revoked, usedOk=made&&d.last_session_at&&Date.parse(d.last_session_at)>=Date.parse(d.enrolled_at);
     const backOk=usedOk&&since&&Date.parse(d.last_session_at)>since; if(usedOk)used++; if(backOk)back++;
@@ -529,8 +537,9 @@ async function msStatus(){ try{
   msStat.style.fontSize="14px";
   msStat.textContent=!j.authorized?(j.revoked?"sign in again needed":"not signed in yet")
     :("signed in; stored account matches expected: "+(j.accountMatches===true?"yes":(j.accountMatches===false?"no":"not set up"))
-      +(j.accountEnforced?" (enforced)":" (report only)")+"; screen PCs must be set up: "+(j.deviceRequired?"yes":"not yet"));
-  msStat.style.color=(j.authorized&&j.accountMatches!==false)?"var(--green)":"#F0A04A";
+      +(j.accountEnforced?" (enforced)":" (report only)")+"; screen PCs must be set up: "+(j.deviceRequired?"yes":"not yet")
+      +"; origin check: "+(j.originCheck==="on"?"on":(j.originCheck==="invalid"?"wrong value, it must be exactly https://yousefalrajeh.github.io":"off, set it to https://yousefalrajeh.github.io")));
+  msStat.style.color=(j.authorized&&j.accountMatches!==false&&j.originCheck==="on")?"var(--green)":"#F0A04A";
 }catch(e){ msStat.style.fontSize="14px"; msStat.textContent=e.message||"function unreachable"; msStat.style.color="#F0A04A"; } }
 const MS_SCOPE="https://analysis.windows.net/powerbi/api/Report.Read.All offline_access openid profile";
 const MS_TENANT="83fb7e1f-86fc-4c09-805b-f546be68ffa0";

@@ -56,6 +56,11 @@ export function makeDb(env, fetchFn) {
       return await get("wall_devices?select=screen,enrolled_at,revoked_at,first_used_at,last_used_at,last_session_at,sessions&order=screen");
     },
     async markDeviceUse(screen, sid) { await rpc("wall_device_used", { p_screen: screen, p_session: sid }); },
+    async setMark(id) { return await rpc("wall_mark_set", { p_id: id }); },             // returns the server time
+    async getMark(id) {
+      const rows = await get("wall_admin_marks?id=eq." + encodeURIComponent(id) + "&select=at");
+      return rows.length ? rows[0].at : null;
+    },
     async getDevice(screen) {
       const rows = await get("wall_devices?screen=eq." + encodeURIComponent(screen) + "&select=secret_hash,revoked_at");
       return rows.length ? rows[0] : null;

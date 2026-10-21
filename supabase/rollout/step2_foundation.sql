@@ -94,6 +94,22 @@ grant execute on function public.wall_is_admin() to authenticated, anon;
 create policy screen_health_admin_read on public.screen_health for select to authenticated
   using (public.wall_is_admin());
 
+-- admin markers by the server's clock, e.g. when the restart check started (enrol function, service role only)
+create table if not exists public.wall_admin_marks (
+  id text primary key check (id ~ '^[a-z_]{1,40}$'),
+  at timestamptz not null
+);
+alter table public.wall_admin_marks enable row level security;
+revoke all on public.wall_admin_marks from anon, authenticated, public;
+create or replace function public.wall_mark_set(p_id text) returns timestamptz
+language sql security definer set search_path = '' as $$
+  insert into public.wall_admin_marks (id, at) values (p_id, now())
+  on conflict (id) do update set at = excluded.at
+  returning at;
+$$;
+revoke all on function public.wall_mark_set(text) from public, anon, authenticated;
+grant execute on function public.wall_mark_set(text) to service_role;
+
 -- one successful use of a device secret in a page session (called by pbi-token, service role only)
 create or replace function public.wall_device_used(p_screen text, p_session text) returns void
 language sql security definer set search_path = '' as $$

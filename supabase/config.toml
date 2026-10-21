@@ -9,8 +9,12 @@
 #   wall-device-enroll console admins (session checked in code against wall_admins)
 # Players call pbi-token without any Authorization header (today's live v5 runs this way), so a deploy
 # with the gateway check on would answer 401 to every screen. Deploy each one with --no-verify-jwt too:
-#   supabase functions deploy pbi-token --no-verify-jwt
+#   supabase functions deploy pbi-token --no-verify-jwt --project-ref <ref>
 #   (same for the other five)
+
+# project_id: the user fills it before deploying. It is the project ref, i.e. the first part of the
+# Supabase address in config.js (already public there). Or run "supabase link --project-ref <ref>" once.
+project_id = "FILL_IN_PROJECT_REF"
 
 [functions.pbi-token]
 verify_jwt = false

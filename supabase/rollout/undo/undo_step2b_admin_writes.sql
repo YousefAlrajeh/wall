@@ -1,7 +1,6 @@
--- WS-wall21 step 2: ROLLBACK of 20261021130000_wall_rls_tighten.sql. NOT APPLIED; use only to undo.
+-- WS-wall21 UNDO of rollout step 2b (admin-only writes, media not listable). NOT APPLIED; only to undo.
 -- Restores the rules exactly as listed in exports\wall_backup_20261021\policies.csv (21 Oct 2026).
--- The screen key cell is NOT restored here (its value never goes in a file): if old players must run
--- again, put the value back by hand from the backup (settings_rows.csv) after this script.
+-- Run in the Supabase SQL editor. Never through "supabase db push".
 
 begin;
 
@@ -22,8 +21,6 @@ create policy auth_all_scenes on public.scenes for all to authenticated using (t
 create policy auth_all_rotation on public.rotation for all to authenticated using (true) with check (true);
 create policy auth_all_assign on public.assignments for all to authenticated using (true) with check (true);
 create policy auth_all_presets on public.rotation_presets for all to authenticated using (true) with check (true);
-
-alter table public.settings drop constraint if exists settings_no_screen_key;
 
 drop policy if exists media_admin_read on storage.objects;
 drop policy if exists media_admin_write on storage.objects;

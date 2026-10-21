@@ -14,9 +14,14 @@ export async function handle(req, { env, db }) {
   try { adm = await checkAdmin(db, bearer(req)); } catch (_) { return json(req, env, 503, { error: "retry_later" }); }
   if (!adm.ok) return json(req, env, 403, { error: "denied" });
   const b = await readJson(req, 512);
+  if (b && b.action === "restart_check_start") { // the restart check starts now, by the SERVER's clock
+    const at = await db.setMark("restart_check");
+    return json(req, env, 200, { restart_check_at: at });
+  }
   if (b && b.action === "list") { // which screens are enrolled (never the hashes)
     const rows = await db.listDevices();
-    return json(req, env, 200, { devices: rows.map((r) => ({ screen: r.screen, enrolled_at: r.enrolled_at, revoked: !!r.revoked_at,
+    const mark = await db.getMark("restart_check");
+    return json(req, env, 200, { restart_check_at: mark, devices: rows.map((r) => ({ screen: r.screen, enrolled_at: r.enrolled_at, revoked: !!r.revoked_at,
       first_used_at: r.first_used_at || null, last_session_at: r.last_session_at || null, sessions: r.sessions | 0 })) });
   }
   if (!b || typeof b.screen !== "string" || !SCREEN_ID_RE.test(b.screen)) return json(req, env, 400, { error: "bad_request" });
