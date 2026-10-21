@@ -35,9 +35,25 @@ export function makeDb(env, fetchFn) {
   }
 
   return {
+    // the screen key (D-212, unchanged): the function secret SCREEN_KEY; the settings column only as a
+    // fallback until the RLS migration empties it
     async getScreenKey() {
+      if (env.SCREEN_KEY) return env.SCREEN_KEY;
       const rows = await get("settings?id=eq.main&select=screen_key");
       return rows.length ? rows[0].screen_key : null;
+    },
+    // pbi-token's server-only store (table `vault`, RLS on with no policies), same rows and format as v5
+    async vGet(id) {
+      const rows = await get("vault?id=eq." + encodeURIComponent(id) + "&select=data");
+      return rows.length ? rows[0].data : null;
+    },
+    async vSet(id, data) { await upsert("vault", { id, data, updated_at: new Date().toISOString() }, "id"); },
+    async getContentUrl(id) {
+      const rows = await get("content?id=eq." + encodeURIComponent(id) + "&select=url");
+      return rows.length ? rows[0].url : null;
+    },
+    async listDevices() {
+      return await get("wall_devices?select=screen,enrolled_at,revoked_at&order=screen");
     },
     async getDevice(screen) {
       const rows = await get("wall_devices?screen=eq." + encodeURIComponent(screen) + "&select=secret_hash,revoked_at");

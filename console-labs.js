@@ -2,7 +2,6 @@
    by a signed-in admin. Without ?labs=1 the console is exactly as before.
    - the feature switch settings.data.canvasPages and the bezel / safe margin (settings.data.wallLayout)
    - one-time sign-in of the figures account (function wall-reader-signin; no token ever comes back here)
-   - one-time link per screen PC with its own device secret (function wall-device-enroll)
    - screen health grid (table screen_health, admins only)
    All text is set with textContent. */
 (function () {
@@ -57,19 +56,6 @@
   var codeLine = h("div", { style: "font-size:16px;margin:4px 0 8px" });
   box.appendChild(codeLine);
 
-  /* device links */
-  var r4 = h("div", { "class": "row" });
-  r4.appendChild(h("label", { style: "width:170px" }, "Screen PC link"));
-  var scrSel = h("select", { style: css });
-  L.screens().forEach(function (s) { scrSel.appendChild(h("option", { value: s }, s)); });
-  r4.appendChild(scrSel);
-  var mk = h("button", { style: css }, "Make one-time link for this screen");
-  r4.appendChild(mk);
-  box.appendChild(r4);
-  var linkOut = h("input", { readonly: "readonly", style: "width:100%;" + css });
-  var linkNote = h("div", { style: "font-size:14px;color:var(--dim)" }, "");
-  box.appendChild(linkOut); box.appendChild(linkNote);
-
   /* health grid */
   box.appendChild(h("div", { style: "margin-top:10px" }, "Screen health"));
   var grid = h("div", { "class": "wallgrid" });
@@ -122,16 +108,6 @@
       })();
     } catch (e) { codeLine.textContent = e.message; codeLine.style.color = AMBER; }
   };
-  mk.onclick = async function () {
-    var scr = scrSel.value;
-    if (!confirm("Make a new link for " + scr + "? The old link for this screen stops working for figures.")) return;
-    try {
-      var j = await call("wall-device-enroll", { screen: scr });
-      linkOut.value = C.SITE + "/player.html?s=" + scr + "&k=" + encodeURIComponent(C.SCREEN_KEY) + "&d=" + encodeURIComponent(j.deviceSecret);
-      linkNote.textContent = "Open this link once on the " + scr + " PC. It is shown only now and is not kept anywhere else; the PC remembers it.";
-    } catch (e) { linkNote.textContent = e.message; linkNote.style.color = AMBER; }
-  };
-
   async function paintHealth() {
     var r = await sb.from("screen_health").select("screen,last_seen,state,error_code,clock_offset_ms,clock_rtt_ms,feed_version");
     var rows = (r && r.data) || [];

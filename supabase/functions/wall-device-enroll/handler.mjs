@@ -14,6 +14,10 @@ export async function handle(req, { env, db }) {
   try { adm = await checkAdmin(db, bearer(req)); } catch (_) { return json(req, env, 503, { error: "retry_later" }); }
   if (!adm.ok) return json(req, env, 403, { error: "denied" });
   const b = await readJson(req, 512);
+  if (b && b.action === "list") { // which screens are enrolled (never the hashes)
+    const rows = await db.listDevices();
+    return json(req, env, 200, { devices: rows.map((r) => ({ screen: r.screen, enrolled_at: r.enrolled_at, revoked: !!r.revoked_at })) });
+  }
   if (!b || typeof b.screen !== "string" || !SCREEN_ID_RE.test(b.screen)) return json(req, env, 400, { error: "bad_request" });
   if (b.action === "revoke") {
     await db.revokeDevice(b.screen);

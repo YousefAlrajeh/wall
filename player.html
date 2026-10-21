@@ -46,6 +46,16 @@ const SCREEN = (qs.get("s")||"R1C1").toUpperCase();
 const KEY = qs.get("k")||"";
 document.getElementById("bootId").textContent = SCREEN;
 const sb = createClient(C.SUPA_URL, C.SUPA_KEY);
+function safeStorage(){ try{ return window.localStorage; }catch(e){ return null; } }
+/* screen enrolment: the one-time link from the console carries &d= (this PC's own device secret).
+   It is kept in this PC's browser storage only and removed from the address bar. */
+const DEVICE=(()=>{ const st=safeStorage(), k="wallDevice."+SCREEN, d=qs.get("d");
+  if(d&&/^[A-Za-z0-9_-]{43}$/.test(d)){
+    try{ st&&st.setItem(k,d); }catch(e){}
+    try{ const q=new URLSearchParams(location.search); q.delete("d"); history.replaceState({},"",location.pathname+"?"+q.toString()); }catch(e){}
+    return d; }
+  try{ return (st&&st.getItem(k))||""; }catch(e){ return ""; } })();
+let STOP=false;
 
 /* ---------- state ---------- */
 let SETTINGS={}, SCENES=[], CONTENT=[], ROT=null, ASSIGN=null;
@@ -170,10 +180,17 @@ function runEffect(cmd,g){
 }
 
 /* ---------- loading ---------- */
+function tokenPost(body){ return fetch(C.TOKEN_FN,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}); }
 async function tokenConfig(contentId,fresh){
-  const r = await fetch(C.TOKEN_FN+"?content="+encodeURIComponent(contentId)+"&k="+encodeURIComponent(KEY)+(fresh?"&fresh=1":""));
+  let r = await tokenPost({content:contentId,s:SCREEN,k:KEY,d:DEVICE,fresh:!!fresh});
   let j=null; try{ j=await r.json(); }catch(e){}
+  if(r.status===403&&j&&j.error==="bad key"&&SETTINGS._screen_key){ /* token function not updated yet: old request form */
+    r = await fetch(C.TOKEN_FN+"?content="+encodeURIComponent(contentId)+"&k="+encodeURIComponent(KEY)+(fresh?"&fresh=1":""));
+    j=null; try{ j=await r.json(); }catch(e){} }
+  if(j&&j.enrolled===false) enrolNotice(false);
   if(!r.ok){
+    if(j&&j.error==="not_enrolled"){ enrolNotice(true); WHY="screen not set up: reports need this PC's one-time link"; throw new Error("not_enrolled"); }
+    if(j&&j.error==="account_mismatch"){ WHY="Microsoft sign-in is not the expected account: ask an admin to check the console"; throw new Error("account_mismatch"); }
     if(j&&j.error==="reauth_required"){ WHY="MICROSOFT RE-AUTH REQUIRED — open the console and click Authorize Microsoft"; throw new Error("reauth_required"); }
     if(j&&j.error==="retry_later"){ WHY="Microsoft sign-in service busy — retrying automatically"; throw new Error("retry_later"); }
     throw new Error("token fn "+r.status);
@@ -307,6 +324,7 @@ function scheduleFlip(remain){
   flipTimer=setTimeout(()=>{ flipTimer=null; tick(); }, Math.max(20,remain+15));
 }
 function tick(){
+  if(STOP) return;
   const r=rotationNow();
   if(r){
     const sc=SCENES.find(s=>s.id===r.item.sceneId);
@@ -339,15 +357,7 @@ function tick(){
 }
 
 /* ---------- wall pages, shared clock, figures feed (canvasPages on only) ---------- */
-function safeStorage(){ try{ return window.localStorage; }catch(e){ return null; } }
-function deviceSecret(){ /* one-time link carries &d=; keep it on this PC only and clear it from the address bar */
-  const st=safeStorage(), k="wallDevice."+SCREEN, d=qs.get("d");
-  if(d&&/^[A-Za-z0-9_-]{43}$/.test(d)){
-    try{ st&&st.setItem(k,d); }catch(e){}
-    try{ const q=new URLSearchParams(location.search); q.delete("d"); history.replaceState({},"",location.pathname+"?"+q.toString()); }catch(e){}
-    return d; }
-  try{ return (st&&st.getItem(k))||""; }catch(e){ return ""; }
-}
+function deviceSecret(){ return DEVICE; }
 function healthNow(){ /* fixed codes and numbers only, never names or free text */
   const cs=CANVAS.clock?CANVAS.clock.stats():{};
   const fs=CANVAS.feed?CANVAS.feed.status():{};
@@ -445,6 +455,28 @@ if(DEBUG){ const d=document.createElement("div");
       +"\ngen:"+gen+" key:"+String(lastShownKey||"-").slice(0,34)
       +(WHY?"\nWHY: "+WHY:"")
       +"  offset:"+Math.round(CLOCK_OFFSET)+"ms"; },500); }
+/* ---------- screen enrolment and key check (brief step 2) ---------- */
+async function screenCheck(){
+  try{
+    const r=await tokenPost({action:"check",s:SCREEN,k:KEY,d:DEVICE});
+    let j=null; try{ j=await r.json(); }catch(e){}
+    if(r.status===403&&j&&j.error==="bad key"){ if(!SETTINGS._screen_key) refuseKey(); return; } /* old function: local check already decided */
+    if(r.ok&&j&&j.key===true&&j.enrolled===false) enrolNotice(j.required===true);
+  }catch(e){}
+}
+function refuseKey(){
+  STOP=true; gen++; cleanBuf(front); cleanBuf(back); front.el.classList.remove("front"); currentUrl=null;
+  document.getElementById("keyerr").style.display="flex";
+  document.getElementById("boot").style.display="none";
+}
+function enrolNotice(required){
+  let n=document.getElementById("enrol");
+  if(!n){ n=document.createElement("div"); n.id="enrol";
+    n.style.cssText="position:fixed;left:2vw;right:2vw;bottom:2vh;z-index:55;padding:12px 18px;border-radius:10px;background:rgba(20,10,4,.88);color:#F0A04A;font:600 max(18px,1.5vw) Segoe UI,sans-serif;text-align:center";
+    document.body.appendChild(n); }
+  n.textContent=required?"This screen PC is not set up, so reports cannot load. Open its one-time link from the console once on this PC."
+    :"This screen PC is not set up yet. Open its one-time link from the console once on this PC.";
+}
 function identifyFlash(){ const d=document.getElementById("identify");
   d.textContent=SCREEN; d.style.display="flex"; after(4000,()=>d.style.display="none"); }
 
@@ -454,13 +486,14 @@ function identifyFlash(){ const d=document.getElementById("identify");
   try{ await loadAll(); }
   catch(e){ document.getElementById("keyerr").textContent="Cannot reach the wall database.\nCheck internet / setup."; 
     document.getElementById("keyerr").style.display="flex"; console.error(e); return; }
-  if(!SETTINGS._screen_key || KEY!==SETTINGS._screen_key){
+  if((SETTINGS._screen_key && KEY!==SETTINGS._screen_key) || !KEY){
     document.getElementById("keyerr").style.display="flex";
     document.getElementById("boot").style.display="none"; return; }
   if(SETTINGS.canvasPages===true) canvasStart();
   subscribe();
   tick();
   setInterval(tick,1000);
+  screenCheck(); /* background: never delays or blanks the wall unless the server clearly refuses the key */
   setInterval(()=>{ const b=document.getElementById("bootWhy");
     if(b&&WHY) b.textContent="Waiting: "+WHY; },1500);
   /* safety net: realtime is the primary channel; this backup poll runs every 5 MINUTES

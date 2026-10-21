@@ -172,6 +172,17 @@
       <span class="muted">Wall view for monitoring: <a id="wallLink" target="_blank" style="color:var(--green)"></a></span></div>
   </div>
 
+  <div class="box" style="grid-column:1/-1;font-size:14px">
+    <h2 style="letter-spacing:0">Screen PCs (set up each one once)</h2>
+    <div class="row" style="font-size:14px">Each screen PC needs its own one-time link. Open it once on that PC; the PC remembers it. Making a new link for a screen stops its old one.</div>
+    <div class="row"><select id="enScr" style="font-size:14px"></select>
+      <button onclick="enrolMake()" style="font-size:14px">Make one-time link for this screen</button>
+      <button onclick="enrolList()" style="font-size:14px">Refresh list</button></div>
+    <input id="enLink" readonly style="width:100%;font-size:14px">
+    <div id="enNote" style="font-size:14px;margin-top:4px"></div>
+    <div class="wallgrid" id="enGrid" style="margin-top:8px"></div>
+  </div>
+
 </div>
 
 <script type="module">
@@ -224,6 +235,8 @@ async function load(){
 }
 window.load=load;
 function boot(){ rotTx.innerHTML=txOpts("fade"); load();
+  for(const s2 of screens){ const o=document.createElement("option"); o.value=s2; o.textContent=s2; enScr.appendChild(o); }
+  enrolList();
   if(new URLSearchParams(location.search).get("labs")==="1"){ /* wall pages setup box, admins only, hidden otherwise */
     const s=document.createElement("script"); s.src="console-labs.js"; document.head.appendChild(s); }
   setInterval(()=>{ if(!document.hidden) load(); },30000); /* light poll; actions refresh instantly anyway */
@@ -436,6 +449,24 @@ window.saveSettings=async()=>{
   delete d._identify;
   await sb.from("settings").update({data:d,updated_at:new Date().toISOString()}).eq("id","main");
   load(); alert("Settings saved. Screens update automatically."); };
+/* ---------- screen PC enrolment (brief step 2-A) ---------- */
+const ENROL_FN=String(C.SUPA_URL).replace(/\/$/,"")+"/functions/v1/wall-device-enroll";
+window.enrolList=async()=>{ try{
+  const j=await adminPost(ENROL_FN,{action:"list"}); const g=document.getElementById("enGrid"); g.textContent="";
+  let n=0; for(const s2 of screens){ const d=(j.devices||[]).find(x=>x.screen===s2); const ok=d&&!d.revoked; if(ok)n++;
+    const c=document.createElement("div"); c.className="cell"; c.style.fontSize="14px";
+    const b=document.createElement("b"); b.textContent=s2; c.appendChild(b);
+    const t=document.createElement("div"); t.style.fontSize="14px"; t.textContent=ok?"set up":"not set up"; if(!ok)t.style.color="#F0A04A"; c.appendChild(t);
+    g.appendChild(c); }
+  enNote.textContent=n+" of "+screens.length+" screen PCs set up."; enNote.style.color=n===screens.length?"":"#F0A04A";
+}catch(e){ enNote.textContent=e.message; enNote.style.color="#F0A04A"; } };
+window.enrolMake=async()=>{ const scr=enScr.value;
+  if(!confirm("Make a new one-time link for "+scr+"? Its old link stops working."))return;
+  try{ const j=await adminPost(ENROL_FN,{screen:scr});
+    enLink.value=C.SITE+"/player.html?s="+scr+"&k="+encodeURIComponent(C.SCREEN_KEY)+"&d="+encodeURIComponent(j.deviceSecret);
+    enNote.textContent="Open this link once on the "+scr+" PC. It is shown only now and is not kept anywhere else."; enNote.style.color="";
+    enrolList();
+  }catch(e){ enNote.textContent=e.message; enNote.style.color="#F0A04A"; } };
 function paintLinks(){
   const L=screens.map(s=>C.SITE+"/player.html?s="+s+"&k="+C.SCREEN_KEY).join("\n");
   linksBox.value=L;
@@ -475,11 +506,19 @@ function wsPaintMap(){ const w=wsCfg(); const g=document.getElementById("wsMap")
   wsHint.textContent=w.enabled?"Brighter = flips first. The wave takes "+maxD+"ms to cross the wall.":"Wall Sync is off — all screens flip at the same instant."; }
 
 /* ---------- Microsoft master-user authorization (device code) ---------- */
+async function adminPost(url,body){ /* signed-in console admin only (brief step 2-G) */
+  const {data}=await sb.auth.getSession(); if(!data.session) throw new Error("Sign in to the console first");
+  const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json",apikey:C.SUPA_KEY,Authorization:"Bearer "+data.session.access_token},body:JSON.stringify(body)});
+  let j={}; try{ j=await r.json(); }catch(e){}
+  if(r.status===403) throw new Error(j.error==="wrong_account"?"That Microsoft account is not the expected one. Nothing was changed.":"This account is not a wall admin");
+  if(!r.ok) throw new Error(j.error||("error "+r.status));
+  return j; }
 async function msStatus(){ try{
-  const r=await fetch(C.TOKEN_FN+"?status=1&k="+C.SCREEN_KEY); const j=await r.json();
-  msStat.textContent=j.authorized?"✅ authorized":(j.revoked?"⛔ re-auth required":"⚠ not authorized yet");
-  msStat.style.color=j.authorized?"var(--green)":"#d4a017";
-}catch(e){ msStat.textContent="function unreachable"; } }
+  const j=await adminPost(C.TOKEN_FN,{action:"status"});
+  msStat.textContent=!j.authorized?(j.revoked?"re-sign-in needed":"not signed in yet")
+    :(j.accountMatches===false?"signed in, but NOT the expected account":(j.accountMatches===true?"signed in (expected account)":"signed in (account check not set up)"));
+  msStat.style.color=(j.authorized&&j.accountMatches!==false)?"var(--green)":"#F0A04A";
+}catch(e){ msStat.textContent=e.message||"function unreachable"; msStat.style.color="#F0A04A"; } }
 const MS_SCOPE="https://analysis.windows.net/powerbi/api/Report.Read.All offline_access openid profile";
 const MS_TENANT="83fb7e1f-86fc-4c09-805b-f546be68ffa0";
 const MS_CLIENT="33d245d7-3950-406a-b526-2d14ab27cf41";
@@ -504,13 +543,11 @@ window.msAuth=async()=>{ /* normal browser sign-in (authorization code + PKCE) �
   const v=sessionStorage.getItem("pkce_v"), ruri=sessionStorage.getItem("pkce_r");
   if(!v){ alert("Sign-in returned but the session was lost — click Authorize again."); return; }
   try{
-    const r=await fetch(C.TOKEN_FN+"?redeem=1&k="+C.SCREEN_KEY
-      +"&code="+encodeURIComponent(code)+"&verifier="+encodeURIComponent(v)
-      +"&ruri="+encodeURIComponent(ruri));
-    const j=await r.json();
-    if(j.ok){ alert("✅ Microsoft authorization complete. The wall renews itself from here."); }
-    else alert("Authorization failed: "+(j.error||"unknown")+"\nClick Authorize Microsoft to retry.");
-  }catch(e){ alert("Authorization failed: "+e+"\nClick Authorize Microsoft to retry."); }
+    const {data}=await sb.auth.getSession();
+    if(!data.session){ alert("Sign in to the console first, then click Authorize Microsoft again."); return; }
+    const j=await adminPost(C.TOKEN_FN,{action:"redeem",code,verifier:v,ruri});
+    if(j.ok){ alert("Microsoft sign-in saved. The wall renews itself from here."); msStatus(); }
+  }catch(e){ alert("Sign-in not saved: "+(e.message||e)+"\nClick Authorize Microsoft to try again."); }
 })();
 setTimeout(msStatus,1500); setInterval(msStatus,60000);
 </script>
