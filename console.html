@@ -174,10 +174,11 @@
 
   <div class="box" style="grid-column:1/-1;font-size:14px">
     <h2 style="letter-spacing:0">Screen PCs (set up each one once)</h2>
-    <div class="row" style="font-size:14px">Each screen PC needs its own one-time link. Open it once on that PC; the PC remembers it. Making a new link for a screen stops its old one.</div>
+    <div class="row" style="font-size:14px">Each screen needs its own link. Put it in the Sidebar in place of that screen's old link. A new link for a screen stops its old one.</div>
     <div class="row"><select id="enScr" style="font-size:14px"></select>
-      <button onclick="enrolMake()" style="font-size:14px">Make one-time link for this screen</button>
-      <button onclick="enrolList()" style="font-size:14px">Refresh list</button></div>
+      <button onclick="enrolMake()" style="font-size:14px">Make the link for this screen</button>
+      <button onclick="enrolList()" style="font-size:14px">Refresh list</button>
+      <button onclick="restartCheck()" style="font-size:14px">Start restart check</button></div>
     <input id="enLink" readonly style="width:100%;font-size:14px">
     <div id="enNote" style="font-size:14px;margin-top:4px"></div>
     <div class="wallgrid" id="enGrid" style="margin-top:8px"></div>
@@ -451,20 +452,30 @@ window.saveSettings=async()=>{
   load(); alert("Settings saved. Screens update automatically."); };
 /* ---------- screen PC enrolment (brief step 2-A) ---------- */
 const ENROL_FN=String(C.SUPA_URL).replace(/\/$/,"")+"/functions/v1/wall-device-enroll";
+/* a screen counts as set up only when its PC has used its secret successfully in a page session after the
+   link was made; after "Start restart check", only when it came back with it after the restart */
+function rcSince(){ try{ return +localStorage.getItem("wallRestartCheck")||0; }catch(e){ return 0; } }
+window.restartCheck=()=>{ if(!confirm("Start the restart check now? Then restart the ECC room PC and the Sidebar, and press Refresh list."))return;
+  try{ localStorage.setItem("wallRestartCheck",String(Date.now())); }catch(e){} enrolList(); };
 window.enrolList=async()=>{ try{
   const j=await adminPost(ENROL_FN,{action:"list"}); const g=document.getElementById("enGrid"); g.textContent="";
-  let n=0; for(const s2 of screens){ const d=(j.devices||[]).find(x=>x.screen===s2); const ok=d&&!d.revoked; if(ok)n++;
+  const since=rcSince(); let used=0, back=0;
+  for(const s2 of screens){ const d=(j.devices||[]).find(x=>x.screen===s2)||null;
+    const made=d&&!d.revoked, usedOk=made&&d.last_session_at&&Date.parse(d.last_session_at)>=Date.parse(d.enrolled_at);
+    const backOk=usedOk&&since&&Date.parse(d.last_session_at)>since; if(usedOk)used++; if(backOk)back++;
     const c=document.createElement("div"); c.className="cell"; c.style.fontSize="14px";
     const b=document.createElement("b"); b.textContent=s2; c.appendChild(b);
-    const t=document.createElement("div"); t.style.fontSize="14px"; t.textContent=ok?"set up":"not set up"; if(!ok)t.style.color="#F0A04A"; c.appendChild(t);
-    g.appendChild(c); }
-  enNote.textContent=n+" of "+screens.length+" screen PCs set up."; enNote.style.color=n===screens.length?"":"#F0A04A";
+    const t=document.createElement("div"); t.style.fontSize="14px";
+    t.textContent=!made?"no link yet":(!usedOk?"link made, not used yet":(since?(backOk?"back after restart":"not back yet"):"working"));
+    if(!usedOk||(since&&!backOk)) t.style.color="#F0A04A"; c.appendChild(t); g.appendChild(c); }
+  enNote.textContent=used+" of "+screens.length+" screen PCs working with their own link"+(since?"; "+back+" of "+screens.length+" came back after the restart check started at "+new Date(since).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"; not yet proven after a restart")+".";
+  enNote.style.color=(since?back:0)===screens.length?"":"#F0A04A";
 }catch(e){ enNote.textContent=e.message; enNote.style.color="#F0A04A"; } };
 window.enrolMake=async()=>{ const scr=enScr.value;
   if(!confirm("Make a new one-time link for "+scr+"? Its old link stops working."))return;
   try{ const j=await adminPost(ENROL_FN,{screen:scr});
-    enLink.value=C.SITE+"/player.html?s="+scr+"&k="+encodeURIComponent(C.SCREEN_KEY)+"&d="+encodeURIComponent(j.deviceSecret);
-    enNote.textContent="Open this link once on the "+scr+" PC. It is shown only now and is not kept anywhere else."; enNote.style.color="";
+    enLink.value=C.SITE+"/player.html?s="+scr+"&k="+encodeURIComponent(C.SCREEN_KEY)+"#d="+encodeURIComponent(j.deviceSecret);
+    enNote.textContent="Put this link in the Sidebar for "+scr+" in place of its old link. It is shown only now and is not kept anywhere else."; enNote.style.color="";
     enrolList();
   }catch(e){ enNote.textContent=e.message; enNote.style.color="#F0A04A"; } };
 function paintLinks(){
@@ -515,10 +526,12 @@ async function adminPost(url,body){ /* signed-in console admin only (brief step 
   return j; }
 async function msStatus(){ try{
   const j=await adminPost(C.TOKEN_FN,{action:"status"});
-  msStat.textContent=!j.authorized?(j.revoked?"re-sign-in needed":"not signed in yet")
-    :(j.accountMatches===false?"signed in, but NOT the expected account":(j.accountMatches===true?"signed in (expected account)":"signed in (account check not set up)"));
+  msStat.style.fontSize="14px";
+  msStat.textContent=!j.authorized?(j.revoked?"sign in again needed":"not signed in yet")
+    :("signed in; stored account matches expected: "+(j.accountMatches===true?"yes":(j.accountMatches===false?"no":"not set up"))
+      +(j.accountEnforced?" (enforced)":" (report only)")+"; screen PCs must be set up: "+(j.deviceRequired?"yes":"not yet"));
   msStat.style.color=(j.authorized&&j.accountMatches!==false)?"var(--green)":"#F0A04A";
-}catch(e){ msStat.textContent=e.message||"function unreachable"; msStat.style.color="#F0A04A"; } }
+}catch(e){ msStat.style.fontSize="14px"; msStat.textContent=e.message||"function unreachable"; msStat.style.color="#F0A04A"; } }
 const MS_SCOPE="https://analysis.windows.net/powerbi/api/Report.Read.All offline_access openid profile";
 const MS_TENANT="83fb7e1f-86fc-4c09-805b-f546be68ffa0";
 const MS_CLIENT="33d245d7-3950-406a-b526-2d14ab27cf41";

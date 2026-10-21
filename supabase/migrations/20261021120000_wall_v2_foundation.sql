@@ -16,7 +16,13 @@ create table if not exists public.wall_devices (
   screen text primary key check (screen ~ '^R[1-3]C[1-7]$'),
   secret_hash text not null check (secret_hash ~ '^[0-9a-f]{64}$'),
   enrolled_at timestamptz not null default now(),
-  revoked_at timestamptz
+  revoked_at timestamptz,
+  -- proof the PC kept its secret: page sessions that used it successfully (pbi-token "check")
+  first_used_at timestamptz,
+  last_used_at timestamptz,
+  last_session text check (last_session is null or last_session ~ '^[0-9a-f]{16}$'),
+  last_session_at timestamptz,
+  sessions integer not null default 0
 );
 
 -- The latest checked figures snapshot (one row). Screens get it only through wall-feed.
@@ -76,8 +82,31 @@ revoke all on public.wall_admins, public.wall_devices, public.wall_figures, publ
 
 -- Admins may read the health grid, nothing else.
 grant select on public.screen_health to authenticated;
+-- console admins = a row in wall_admins. Policies must use this security-definer function: the signed-in
+-- user has no rights on wall_admins itself, so a direct sub-select there would never see a row.
+create or replace function public.wall_is_admin() returns boolean
+language sql stable security definer set search_path = '' as $$
+  select exists (select 1 from public.wall_admins a where a.user_id = auth.uid());
+$$;
+revoke all on function public.wall_is_admin() from public;
+grant execute on function public.wall_is_admin() to authenticated, anon;
+
 create policy screen_health_admin_read on public.screen_health for select to authenticated
-  using (exists (select 1 from public.wall_admins a where a.user_id = auth.uid()));
+  using (public.wall_is_admin());
+
+-- one successful use of a device secret in a page session (called by pbi-token, service role only)
+create or replace function public.wall_device_used(p_screen text, p_session text) returns void
+language sql security definer set search_path = '' as $$
+  update public.wall_devices d
+     set last_used_at = now(),
+         first_used_at = coalesce(d.first_used_at, now()),
+         sessions = d.sessions + case when d.last_session is distinct from p_session then 1 else 0 end,
+         last_session_at = case when d.last_session is distinct from p_session then now() else d.last_session_at end,
+         last_session = p_session
+   where d.screen = p_screen and d.revoked_at is null and p_session ~ '^[0-9a-f]{16}$';
+$$;
+revoke all on function public.wall_device_used(text, text) from public, anon, authenticated;
+grant execute on function public.wall_device_used(text, text) to service_role;
 
 -- Shared wall clock: server time in ms, read-only, through the REST API (rpc/wall_now) so the screens'
 -- 8 samples a minute do not count against the edge-function quota. Reveals only the time.

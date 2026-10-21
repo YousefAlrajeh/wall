@@ -5,6 +5,11 @@
 
 begin;
 
+drop policy if exists auth_read_settings on public.settings;
+drop policy if exists auth_read_content on public.content;
+drop policy if exists auth_read_scenes on public.scenes;
+drop policy if exists auth_read_rotation on public.rotation;
+drop policy if exists auth_read_assign on public.assignments;
 drop policy if exists admin_all_settings on public.settings;
 drop policy if exists admin_all_content on public.content;
 drop policy if exists admin_all_scenes on public.scenes;

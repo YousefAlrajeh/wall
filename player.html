@@ -47,15 +47,19 @@ const KEY = qs.get("k")||"";
 document.getElementById("bootId").textContent = SCREEN;
 const sb = createClient(C.SUPA_URL, C.SUPA_KEY);
 function safeStorage(){ try{ return window.localStorage; }catch(e){ return null; } }
-/* screen enrolment: the one-time link from the console carries &d= (this PC's own device secret).
-   It is kept in this PC's browser storage only and removed from the address bar. */
-const DEVICE=(()=>{ const st=safeStorage(), k="wallDevice."+SCREEN, d=qs.get("d");
-  if(d&&/^[A-Za-z0-9_-]{43}$/.test(d)){
+/* screen enrolment: the screen's link from the console carries #d=<this PC's own device secret> in the
+   fragment (never sent to any server as part of the address). It is also kept in this PC's browser
+   storage, and removed from the address bar after reading. */
+const DEVICE=(()=>{ const st=safeStorage(), k="wallDevice."+SCREEN;
+  let d=""; try{ d=new URLSearchParams(String(location.hash||"").replace(/^#/,"")).get("d")||""; }catch(e){}
+  if(/^[A-Za-z0-9_-]{43}$/.test(d)){
     try{ st&&st.setItem(k,d); }catch(e){}
-    try{ const q=new URLSearchParams(location.search); q.delete("d"); history.replaceState({},"",location.pathname+"?"+q.toString()); }catch(e){}
+    try{ history.replaceState({},"",location.pathname+location.search); }catch(e){}
     return d; }
   try{ return (st&&st.getItem(k))||""; }catch(e){ return ""; } })();
-let STOP=false;
+/* this page session (proof for the console that the PC kept its secret after a restart) */
+const SID=(()=>{ try{ return [...crypto.getRandomValues(new Uint8Array(8))].map(b=>b.toString(16).padStart(2,"0")).join(""); }catch(e){ return ""; } })();
+let STOP=false, LEGACY_FN=false;
 
 /* ---------- state ---------- */
 let SETTINGS={}, SCENES=[], CONTENT=[], ROT=null, ASSIGN=null;
@@ -180,14 +184,15 @@ function runEffect(cmd,g){
 }
 
 /* ---------- loading ---------- */
-function tokenPost(body){ return fetch(C.TOKEN_FN,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}); }
+/* text/plain keeps it a simple request: no extra preflight call per token request */
+function tokenPost(body){ return fetch(C.TOKEN_FN,{method:"POST",headers:{"Content-Type":"text/plain"},body:JSON.stringify(body)}); }
+function tokenGet(contentId,fresh){ return fetch(C.TOKEN_FN+"?content="+encodeURIComponent(contentId)+"&k="+encodeURIComponent(KEY)+(fresh?"&fresh=1":"")); }
 async function tokenConfig(contentId,fresh){
-  let r = await tokenPost({content:contentId,s:SCREEN,k:KEY,d:DEVICE,fresh:!!fresh});
+  let r = LEGACY_FN ? await tokenGet(contentId,fresh) : await tokenPost({content:contentId,s:SCREEN,k:KEY,d:DEVICE,fresh:!!fresh});
   let j=null; try{ j=await r.json(); }catch(e){}
-  if(r.status===403&&j&&j.error==="bad key"&&SETTINGS._screen_key){ /* token function not updated yet: old request form */
-    r = await fetch(C.TOKEN_FN+"?content="+encodeURIComponent(contentId)+"&k="+encodeURIComponent(KEY)+(fresh?"&fresh=1":""));
+  if(!LEGACY_FN&&r.status===403&&j&&j.error==="bad key"&&SETTINGS._screen_key){ /* token function not updated yet: old request form from now on */
+    LEGACY_FN=true; r = await tokenGet(contentId,fresh);
     j=null; try{ j=await r.json(); }catch(e){} }
-  if(j&&j.enrolled===false) enrolNotice(false);
   if(!r.ok){
     if(j&&j.error==="not_enrolled"){ enrolNotice(true); WHY="screen not set up: reports need this PC's one-time link"; throw new Error("not_enrolled"); }
     if(j&&j.error==="account_mismatch"){ WHY="Microsoft sign-in is not the expected account: ask an admin to check the console"; throw new Error("account_mismatch"); }
@@ -458,10 +463,11 @@ if(DEBUG){ const d=document.createElement("div");
 /* ---------- screen enrolment and key check (brief step 2) ---------- */
 async function screenCheck(){
   try{
-    const r=await tokenPost({action:"check",s:SCREEN,k:KEY,d:DEVICE});
+    const r=await tokenPost({action:"check",s:SCREEN,k:KEY,d:DEVICE,sid:SID});
     let j=null; try{ j=await r.json(); }catch(e){}
-    if(r.status===403&&j&&j.error==="bad key"){ if(!SETTINGS._screen_key) refuseKey(); return; } /* old function: local check already decided */
-    if(r.ok&&j&&j.key===true&&j.enrolled===false) enrolNotice(j.required===true);
+    if(r.status===403&&j&&j.error==="bad key"){ if(!SETTINGS._screen_key) refuseKey(); else LEGACY_FN=true; return; } /* old function: local check already decided */
+    /* the notice appears on screens only once enforcement is on; before that the console shows who is not set up */
+    if(r.ok&&j&&j.key===true&&j.enrolled===false&&j.required===true) enrolNotice(true);
   }catch(e){}
 }
 function refuseKey(){
@@ -474,8 +480,7 @@ function enrolNotice(required){
   if(!n){ n=document.createElement("div"); n.id="enrol";
     n.style.cssText="position:fixed;left:2vw;right:2vw;bottom:2vh;z-index:55;padding:12px 18px;border-radius:10px;background:rgba(20,10,4,.88);color:#F0A04A;font:600 max(18px,1.5vw) Segoe UI,sans-serif;text-align:center";
     document.body.appendChild(n); }
-  n.textContent=required?"This screen PC is not set up, so reports cannot load. Open its one-time link from the console once on this PC."
-    :"This screen PC is not set up yet. Open its one-time link from the console once on this PC.";
+  n.textContent="This screen PC is not set up, so reports cannot load. Use this screen's link from the console (Screen PCs).";
 }
 function identifyFlash(){ const d=document.getElementById("identify");
   d.textContent=SCREEN; d.style.display="flex"; after(4000,()=>d.style.display="none"); }

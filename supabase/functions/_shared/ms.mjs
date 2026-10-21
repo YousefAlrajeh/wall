@@ -9,9 +9,18 @@
 export const SCOPE = "https://analysis.windows.net/powerbi/api/Dataset.Read.All offline_access openid profile";
 const HOSTS = new Set(["login.microsoftonline.com", "api.powerbi.com"]);
 const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DOMAIN_RE = /^(?=.{4,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i;
+export function tenantOk(t) { return GUID_RE.test(t || "") || DOMAIN_RE.test(t || ""); }
+// The tenant may be set as its GUID or as a domain name (both work in the sign-in address).
+// A GUID is compared with the token's tid; a domain name cannot be turned into the GUID offline,
+// so then only the account id (oid, a GUID) decides.
+export function tenantMatches(expected, tid) {
+  if (GUID_RE.test(expected || "")) return String(tid || "").toLowerCase() === String(expected).toLowerCase();
+  return DOMAIN_RE.test(expected || "") && GUID_RE.test(tid || "");
+}
 
 export function readerConfigOk(env) {
-  return GUID_RE.test(env.WALL_READER_TENANT_ID || "") && GUID_RE.test(env.WALL_READER_CLIENT_ID || "") &&
+  return tenantOk(env.WALL_READER_TENANT_ID) && GUID_RE.test(env.WALL_READER_CLIENT_ID || "") &&
     GUID_RE.test(env.WALL_READER_EXPECTED_OID || "") && GUID_RE.test(env.WALL_READER_GROUP_ID || "") &&
     GUID_RE.test(env.WALL_READER_DATASET_ID || "");
 }
@@ -26,9 +35,8 @@ export function guardedFetch(fetchFn) {
 }
 
 function form(env, extra) {
-  const p = new URLSearchParams({ client_id: env.WALL_READER_CLIENT_ID, ...extra });
-  if (env.WALL_READER_CLIENT_SECRET) p.set("client_secret", env.WALL_READER_CLIENT_SECRET);
-  return p.toString();
+  // public-client flows (device code, refresh): no client secret is ever sent (leave WALL_READER_CLIENT_SECRET unset)
+  return new URLSearchParams({ client_id: env.WALL_READER_CLIENT_ID, ...extra }).toString();
 }
 function authUrl(env, path) {
   return "https://login.microsoftonline.com/" + env.WALL_READER_TENANT_ID + "/oauth2/v2.0/" + path;
@@ -44,7 +52,7 @@ async function postForm(f, url, body) {
 export async function refreshAccess(env, f, refreshToken) {
   const r = await postForm(f, authUrl(env, "token"), form(env, { grant_type: "refresh_token", refresh_token: refreshToken, scope: SCOPE }));
   if (r.status === 200 && r.body.access_token) return { ok: true, access: r.body.access_token, refresh: r.body.refresh_token || null };
-  if (r.body.error === "invalid_grant") return { ok: false, code: "NEEDS_SIGNIN" };
+  if (r.body.error === "invalid_grant" || r.body.error === "interaction_required") return { ok: false, code: "NEEDS_SIGNIN" };
   return { ok: false, code: "TOKEN_REFRESH_FAILED" };
 }
 
@@ -83,7 +91,7 @@ export function claims(token) {
 // Account check: the token must belong to the expected tenant and the one expected account.
 export function accountOk(env, token) {
   const c = claims(token);
-  return !!c && String(c.tid || "").toLowerCase() === String(env.WALL_READER_TENANT_ID).toLowerCase() &&
+  return !!c && tenantMatches(env.WALL_READER_TENANT_ID, c.tid) &&
     String(c.oid || "").toLowerCase() === String(env.WALL_READER_EXPECTED_OID).toLowerCase();
 }
 

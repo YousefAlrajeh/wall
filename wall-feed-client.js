@@ -12,6 +12,8 @@
   var SECRET_KEY_RE = /token|secret|password|authori[sz]ation|bearer|refresh|verifier|device_?code|api_?key|apikey|cookie|session/i;
 
   function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function hhmm(ms) { var d = new Date(ms + TZ_MIN * 60000); return pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes()); }
+  function sameRiyadhDay(a, b) { return Math.floor((a + TZ_MIN * 60000) / 86400000) === Math.floor((b + TZ_MIN * 60000) / 86400000); }
   var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   /* "14:05" in Riyadh time; "23:04 on 20 Oct" when it is not today in Riyadh */
   function fmtAsOf(ms, nowMs) {
@@ -79,7 +81,8 @@
     function start() { if (!timer) timer = setIv(poll, o.intervalMs || 60000); return poll(); }
     function status() {
       var asOf = snap && snap.data_as_of ? Date.parse(snap.data_as_of) : NaN, t = now();
-      return { version: snap ? snap.version : 0, hasData: isFinite(asOf), dataAsOfMs: asOf,
+      return { version: snap ? snap.version : 0, hasData: isFinite(asOf), dataAsOfMs: asOf, sameDay: isFinite(asOf) && sameRiyadhDay(asOf, t),
+        time: isFinite(asOf) ? hhmm(asOf) : null,
         stale: isStale(asOf, t), denied: denied, lastOkAt: lastOkAt, lastErr: lastErr,
         label: isFinite(asOf) ? fmtAsOf(asOf, t) : null };
     }

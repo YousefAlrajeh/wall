@@ -110,7 +110,7 @@
       var val = el(doc, "div", { fontSize: Math.max(14, t.valuePx || 96) + "px", fontWeight: "600", lineHeight: "1.1" }, "");
       val.className = "wp-value";
       box.appendChild(lab); if (t.kind !== "text") box.appendChild(val);
-      rootEl.appendChild(box); tileEls.push({ t: t, val: val }); info.tilesShown++;
+      rootEl.appendChild(box); tileEls.push({ t: t, val: val, lab: lab }); info.tilesShown++;
     });
 
     /* "Data as of" line, on every screen of the page that shows figures (or the ones the page names) */
@@ -127,13 +127,20 @@
       var s = ctx.feed && ctx.feed.snapshot();
       return (s && s.pages && s.pages[page.figuresPage || page.id]) || null;
     }
+    /* "today" figures (key ends _t or _today) are today so far, as of the data time; once the Riyadh
+       day has changed since the data, today and yesterday (_y) figures belong to another day */
+    var TODAY_RE = /(_t|_today)$/, YDAY_RE = /_y$/;
     function refreshText() {
       if (!alive) return;
       var figs = figuresOf();
+      var st0 = ctx.feed ? ctx.feed.status() : { sameDay: true };
       for (var i = 0; i < tileEls.length; i++) {
         var te = tileEls[i], t = te.t;
         if (t.kind === "text") continue;
         var v = figs ? figs[t.figure] : undefined, txt = null;
+        var dayBound = TODAY_RE.test(t.figure || "") || YDAY_RE.test(t.figure || "");
+        if (dayBound && st0.sameDay === false) v = undefined;
+        if (TODAY_RE.test(t.figure || "") && te.lab) te.lab.textContent = (t.label || "") + (st0.sameDay && st0.time ? " (today so far, " + st0.time + ")" : "");
         if (t.kind === "list" && Array.isArray(v) && v.length) {
           txt = v.slice(0, t.maxRows || 6).map(function (r) { return String(r[t.labelKey || "label"]) + "  " + (fmtValue(r[t.valueKey || "value"], t) || "-"); }).join("\n");
           te.val.style.whiteSpace = "pre"; te.val.style.fontSize = Math.max(14, t.listPx || 30) + "px";

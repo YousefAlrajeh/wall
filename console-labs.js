@@ -9,6 +9,10 @@
   var C = window.WALLCFG, sb = window.sb, L = window.WallLayout;
   var FN = String(C.SUPA_URL).replace(/\/$/, "") + "/functions/v1/";
   var AMBER = "#F0A04A";
+  var REASON = { NEEDS_SIGNIN: "the figures account must sign in again", NOT_CONNECTED: "the figures account is not connected",
+    NOT_CONFIGURED: "the figures list is not filled in", READER_NOT_CONFIGURED: "the figures account is not set up on the server",
+    ACCOUNT_MISMATCH: "the signed-in account is not the expected one", TOKEN_REFRESH_FAILED: "Microsoft did not answer; it will try again",
+    DATE_NOT_TODAY: "the figures were not for today", QUERY_CHANGED: "a figures query changed and needs a new check" };
 
   function h(tag, attrs, text) {
     var e = document.createElement(tag);
@@ -86,7 +90,7 @@
       var j = await call("wall-reader-signin", { action: "status" });
       var t = j.connected ? "connected" : "not connected";
       if (j.lastRun) t += "; last figures run " + new Date(j.lastRun.finished_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) +
-        " " + (j.lastRun.result === "SUCCESS" ? "worked" : j.lastRun.result === "UNCHANGED" ? "found no new refresh" : "stopped (" + (j.lastRun.reason || "unknown") + ")");
+        " " + (j.lastRun.result === "SUCCESS" ? "worked" : j.lastRun.result === "UNCHANGED" ? "found no new refresh" : "stopped: " + (REASON[j.lastRun.reason] || "a check failed (" + (j.lastRun.reason || "unknown") + ")"));
       acc.textContent = t; acc.style.color = j.connected ? "" : AMBER;
     } catch (e) { acc.textContent = e.message; acc.style.color = AMBER; }
   }

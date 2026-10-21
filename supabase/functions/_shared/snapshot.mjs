@@ -74,8 +74,10 @@ function validDate(v) {
   const d = new Date(v + "T00:00:00Z");
   return !isNaN(d) && d.toISOString().slice(0, 10) === v;
 }
-// shared text guard: no long digit runs (phone or case numbers), no @, no line breaks
-function textGuard(v) { return !/\d{7,}/.test(v) && !v.includes("@") && !/[\r\n\t]/.test(v); }
+// shared text guard: no long digit runs, no phone number written with spaces, dots or dashes,
+// no @, no line breaks
+const SPACED_PHONE_RE = /\d(?:[\s.\-]?\d){6,}/;
+function textGuard(v) { return !/\d{7,}/.test(v) && !SPACED_PHONE_RE.test(v) && !v.includes("@") && !/[\r\n\t]/.test(v); }
 
 // one value -> [errorCode|null, storedValue]
 function checkValue(s, v) {
@@ -97,7 +99,7 @@ function checkValue(s, v) {
   const parts = v.split(s.sep);
   if (parts.length > s.maxParts) return ["TOO_MANY_PARTS"];
   const re = new RegExp(s.part, "u");
-  for (const p of parts) if (!p.length || !re.test(p)) return ["BAD_LIST_ITEM"];
+  for (const p of parts) if (!p.length || !re.test(p) || /\d{5,}/.test(p)) return ["BAD_LIST_ITEM"];
   return [null, v];
 }
 

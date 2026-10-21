@@ -16,7 +16,7 @@
 // Aad token (Report.Read.All); anyone who takes the device secret out of that PC's browser can too.
 import { checkScreen, checkAdmin, safeEqual, SCREEN_ID_RE } from "../_shared/device.mjs";
 import { json, preflight, readJson, bearer, originAllowed } from "../_shared/http.mjs";
-import { claims } from "../_shared/ms.mjs";
+import { claims, tenantMatches } from "../_shared/ms.mjs";
 
 const SCOPE = "https://analysis.windows.net/powerbi/api/Report.Read.All offline_access openid profile";
 class Reauth extends Error {}
@@ -52,13 +52,15 @@ async function userToken(ctx, force) {
   return mem.at.token;
 }
 
-// account check: tenant and the one expected account (both secrets, by name)
+// account check: the one expected account (PBI_EXPECTED_OID) in the tenant (PBI_TENANT, GUID or domain).
+// Report-only until PBI_ENFORCE_ACCOUNT is "1": status shows yes/no, screens are never refused on it.
 function accountMatches(env, token) {
   if (!env.PBI_EXPECTED_OID) return null;               // not set up: unknown
   const c = claims(token);
-  return !!c && String(c.tid || "").toLowerCase() === String(env.PBI_TENANT || "").toLowerCase() &&
+  return !!c && tenantMatches(env.PBI_TENANT, c.tid) &&
     String(c.oid || "").toLowerCase() === String(env.PBI_EXPECTED_OID).toLowerCase();
 }
+const enforceAccount = (env) => env.PBI_ENFORCE_ACCOUNT === "1" && !!env.PBI_EXPECTED_OID;
 
 async function embedUrlFor(ctx, reportId) {
   const hit = ctx.mem.rep.get(reportId);
@@ -91,7 +93,7 @@ async function tokenAnswer(req, ctx, contentId, fresh, enrolled) {
     if (e instanceof Reauth) return json(req, env, 401, { error: "reauth_required" });
     return json(req, env, 503, { error: "retry_later" });
   }
-  if (accountMatches(env, token) === false) return json(req, env, 503, { error: "account_mismatch" });
+  if (enforceAccount(env) && accountMatches(env, token) !== true) return json(req, env, 503, { error: "account_mismatch" });
   const embedUrl = await embedUrlFor(ctx, pbi.reportId);
   const out = { token, tokenType: "Aad", embedUrl, reportId: pbi.reportId, pageName: pbi.pageName };
   if (enrolled !== undefined) out.enrolled = enrolled;
@@ -115,7 +117,7 @@ export async function handle(req, ctx) {
       if (!q.get("content")) return json(req, env, 400, { error: "bad_request" });
       if (!(await safeEqual(q.get("k") || "", env.SCREEN_KEY || null))) return json(req, env, 403, { error: "bad key" });
       if (required) return json(req, env, 401, { error: "not_enrolled" });
-      return tokenAnswer(req, ctx, q.get("content"), q.get("fresh") === "1");
+      return await tokenAnswer(req, ctx, q.get("content"), q.get("fresh") === "1");
     }
     if (req.method !== "POST") return json(req, env, 405, { error: "method" });
     const b = await readJson(req, 4096);
@@ -129,7 +131,8 @@ export async function handle(req, ctx) {
         const ms = await db.vGet("ms");
         let match = null;
         if (ms && ms.refresh_token) { try { match = accountMatches(env, await userToken(ctx, false)); } catch (_) { match = null; } }
-        return json(req, env, 200, { authorized: !!(ms && ms.refresh_token), revoked: !!(ms && ms.revoked_at), accountMatches: match });
+        return json(req, env, 200, { authorized: !!(ms && ms.refresh_token), revoked: !!(ms && ms.revoked_at), accountMatches: match,
+          accountEnforced: enforceAccount(env), deviceRequired: required });
       }
       // redeem (browser sign-in with PKCE), admin only, expected account only
       if (!env.PBI_EXPECTED_OID) return json(req, env, 400, { error: "account_check_not_set_up" });
@@ -151,9 +154,13 @@ export async function handle(req, ctx) {
     let dev = { ok: false };
     try { dev = await checkScreen(db, b.s, b.k, b.d); } catch (_) { return json(req, env, 503, { error: "retry_later" }); }
     if (!keyOk) return json(req, env, 403, { error: "bad key" });
-    if (b.action === "check") return json(req, env, 200, { key: true, enrolled: dev.ok, required });
+    if (b.action === "check") {
+      // proof that this PC kept its secret: one successful use per page session (sid) is recorded
+      if (dev.ok && typeof b.sid === "string" && /^[0-9a-f]{16}$/.test(b.sid)) { try { await db.markDeviceUse(b.s, b.sid); } catch (_) { /* best effort */ } }
+      return json(req, env, 200, { key: true, enrolled: dev.ok, required });
+    }
     if (required && !dev.ok) return json(req, env, 401, { error: "not_enrolled" });
-    return tokenAnswer(req, ctx, b.content, b.fresh === true || b.fresh === 1, dev.ok);
+    return await tokenAnswer(req, ctx, b.content, b.fresh === true || b.fresh === 1, dev.ok);
   } catch (_) {
     return json(req, env, 500, { error: "server_error" });
   }

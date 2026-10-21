@@ -1,0 +1,31 @@
+# WS-wall21: gateway JWT setting for every wall function (checker_wallv2 H1).
+# verify_jwt = false means the Supabase gateway does NOT require a JWT; each function checks its own
+# callers in code instead:
+#   pbi-token          screens (screen key + device secret) and console admins (session checked in code)
+#   wall-feed          screens (screen key + device secret)
+#   clock              anyone (answers the time only)
+#   wall-figures-pull  the schedule only (header x-wall-pull-secret)
+#   wall-reader-signin console admins (session checked in code against wall_admins)
+#   wall-device-enroll console admins (session checked in code against wall_admins)
+# Players call pbi-token without any Authorization header (today's live v5 runs this way), so a deploy
+# with the gateway check on would answer 401 to every screen. Deploy each one with --no-verify-jwt too:
+#   supabase functions deploy pbi-token --no-verify-jwt
+#   (same for the other five)
+
+[functions.pbi-token]
+verify_jwt = false
+
+[functions.wall-feed]
+verify_jwt = false
+
+[functions.clock]
+verify_jwt = false
+
+[functions.wall-figures-pull]
+verify_jwt = false
+
+[functions.wall-reader-signin]
+verify_jwt = false
+
+[functions.wall-device-enroll]
+verify_jwt = false

@@ -53,14 +53,16 @@ export function makeDb(env, fetchFn) {
       return rows.length ? rows[0].url : null;
     },
     async listDevices() {
-      return await get("wall_devices?select=screen,enrolled_at,revoked_at&order=screen");
+      return await get("wall_devices?select=screen,enrolled_at,revoked_at,first_used_at,last_used_at,last_session_at,sessions&order=screen");
     },
+    async markDeviceUse(screen, sid) { await rpc("wall_device_used", { p_screen: screen, p_session: sid }); },
     async getDevice(screen) {
       const rows = await get("wall_devices?screen=eq." + encodeURIComponent(screen) + "&select=secret_hash,revoked_at");
       return rows.length ? rows[0] : null;
     },
     async putDevice(screen, secretHash) {
-      await upsert("wall_devices", { screen, secret_hash: secretHash, enrolled_at: new Date().toISOString(), revoked_at: null }, "screen");
+      await upsert("wall_devices", { screen, secret_hash: secretHash, enrolled_at: new Date().toISOString(), revoked_at: null,
+        first_used_at: null, last_used_at: null, last_session: null, last_session_at: null, sessions: 0 }, "screen");
     },
     async revokeDevice(screen) {
       await upsert("wall_devices", { screen, secret_hash: "0".repeat(64), revoked_at: new Date().toISOString() }, "screen");

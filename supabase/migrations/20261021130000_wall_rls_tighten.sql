@@ -9,13 +9,7 @@
 
 begin;
 
--- console admins = a row in wall_admins (user id; private table, not in the repo)
-create or replace function public.wall_is_admin() returns boolean
-language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.wall_admins a where a.user_id = auth.uid());
-$$;
-revoke all on function public.wall_is_admin() from public;
-grant execute on function public.wall_is_admin() to authenticated, anon;
+-- console admins = a row in wall_admins: public.wall_is_admin() comes from the foundation migration
 
 -- 1. writes only for admins (replaces "any signed-in user may do anything")
 drop policy if exists auth_all_settings on public.settings;
@@ -32,6 +26,13 @@ create policy admin_all_assign on public.assignments for all to authenticated us
 create policy admin_all_presets on public.rotation_presets for all to authenticated using (public.wall_is_admin()) with check (public.wall_is_admin());
 -- anon keeps reading only what players need: pub_read_settings, pub_read_content, pub_read_scenes,
 -- pub_read_rotation, pub_read_assign stay as they are; rotation_presets has no anon read (console only).
+-- A player tab in a browser that also holds a signed-in non-admin session reads as "authenticated":
+-- give that role the same read-only access to the 5 player tables (checker L8).
+create policy auth_read_settings on public.settings for select to authenticated using (true);
+create policy auth_read_content on public.content for select to authenticated using (true);
+create policy auth_read_scenes on public.scenes for select to authenticated using (true);
+create policy auth_read_rotation on public.rotation for select to authenticated using (true);
+create policy auth_read_assign on public.assignments for select to authenticated using (true);
 
 -- 2. the screen key leaves the public table. Its value is unchanged (D-212): the functions read it from
 --    the secret SCREEN_KEY, the screen links keep it. The backup in exports\wall_backup_20261021 keeps
