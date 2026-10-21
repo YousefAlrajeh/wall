@@ -37,7 +37,7 @@
     (page.tiles || []).forEach(function (t, i) {
       if (!L.parse(t.screen)) p.push("TILE_SCREEN_" + i);
       else if (!L.tileInSafeArea(t)) p.push("TILE_OUTSIDE_SAFE_" + i);
-      if (t.kind !== "text" && !/^[a-zA-Z][a-zA-Z0-9]{0,31}$/.test(t.figure || "")) p.push("TILE_FIGURE_" + i);
+      if (t.kind !== "text" && !/^[a-zA-Z][a-zA-Z0-9_]{0,63}$/.test(t.figure || "")) p.push("TILE_FIGURE_" + i);
       if ((t.labelPx || 28) < 14 || (t.valuePx || 96) < 14) p.push("TILE_FONT_" + i);
     });
     return p;

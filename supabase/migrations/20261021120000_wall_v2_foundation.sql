@@ -39,7 +39,7 @@ create table if not exists public.wall_figures_runs (
   result text not null check (result in ('SUCCESS','UNCHANGED','STOPPED')),
   reason text check (reason is null or reason ~ '^[A-Z0-9_]{1,40}$'),
   at jsonb,
-  queries integer, "rows" integer, bytes integer, ms integer
+  queries integer, "rows" integer, dropped integer, bytes integer, ms integer
 );
 
 -- A device sign-in in progress (at most one, about 15 minutes).

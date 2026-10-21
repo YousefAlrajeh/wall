@@ -5,7 +5,7 @@
 // 4. every allow-listed query, each answer validated strictly; ANY surprise rejects the whole snapshot
 // 5. the snapshot goes to the private table wall_figures; a run row (codes, counts, times) to wall_figures_runs
 import { checkAllowList, validateQueryResult, buildSnapshot } from "../_shared/snapshot.mjs";
-import { safeEqual } from "../_shared/device.mjs";
+import { safeEqual, sha256Hex } from "../_shared/device.mjs";
 import { json, preflight, readJson } from "../_shared/http.mjs";
 import { readerConfigOk, guardedFetch, refreshAccess, accountOk, latestRefresh, executeQuery } from "../_shared/ms.mjs";
 
@@ -24,7 +24,7 @@ export async function handle(req, { env, db, fetch: rawFetch, now, queries }) {
     run.finished_at = new Date(now()).toISOString();
     run.ms = Math.round(now() - t0);
     try { await db.logRun(run); } catch (_) { /* the answer below still says what happened */ }
-    return json(req, env, status, { result: run.result, reason: run.reason, at: run.at, queries: run.queries, rows: run.rows, bytes: run.bytes, ms: run.ms, ...(extra || {}) });
+    return json(req, env, status, { result: run.result, reason: run.reason, at: run.at, queries: run.queries, rows: run.rows, dropped: run.dropped || 0, bytes: run.bytes, ms: run.ms, ...(extra || {}) });
   };
   const stop = (reason, at) => { run.result = "STOPPED"; run.reason = reason; run.at = at || null; return finish(200); };
 
@@ -56,15 +56,20 @@ export async function handle(req, { env, db, fetch: rawFetch, now, queries }) {
   }
 
   const parts = [];
+  run.dropped = 0;
   for (let qi = 0; qi < queries.length; qi++) {
     const q = queries[qi];
+    if ((await sha256Hex(q.dax)) !== q.sha256) return stop("QUERY_CHANGED", { query: qi }); // byte for byte the checked DAX
     let r;
+    const t0q = now();
     try { r = await executeQuery(env, f, tok.access, q.dax); } catch (_) { return stop("QUERY_FAILED", { query: qi }); }
+    const t1q = now();
     run.queries++;
     if (!r.ok) return stop("HTTP_" + r.status, { query: qi });
-    const v = validateQueryResult(q, qi, r.text);
+    const v = validateQueryResult(q, qi, r.text, { queryTimes: [t0q, t1q] });
     if (!v.ok) return stop(v.reason, v.at);
-    run.rows += q.shape === "row" ? 1 : v.figures[q.figure].length;
+    run.rows += 1;
+    run.dropped += v.dropped;
     parts.push({ page: q.page, figures: v.figures });
   }
   const built = buildSnapshot({ prevVersion: prev ? prev.version : 0, dataAsOf: asOf.asOf, fetchedAt: new Date(now()).toISOString(), parts });
