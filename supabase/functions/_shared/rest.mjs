@@ -81,5 +81,7 @@ export function makeDb(env, fetchFn) {
       return rows.length === 1;
     },
     async upsertHealth(row) { await upsert("screen_health", row, "screen"); },
+    // true while this screen is within its calls-per-minute limit (counted in the database, all instances)
+    async feedHit(screen, limit) { return (await rpc("wall_feed_hit", { p_screen: screen, p_limit: limit })) === true; },
   };
 }

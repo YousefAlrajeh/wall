@@ -79,6 +79,36 @@ grant select on public.screen_health to authenticated;
 create policy screen_health_admin_read on public.screen_health for select to authenticated
   using (exists (select 1 from public.wall_admins a where a.user_id = auth.uid()));
 
+-- Shared wall clock: server time in ms, read-only, through the REST API (rpc/wall_now) so the screens'
+-- 8 samples a minute do not count against the edge-function quota. Reveals only the time.
+create or replace function public.wall_now() returns bigint
+language sql stable security invoker set search_path = '' as $$
+  select (extract(epoch from clock_timestamp()) * 1000)::bigint;
+$$;
+revoke all on function public.wall_now() from public;
+grant execute on function public.wall_now() to anon, authenticated, service_role;
+
+-- wall-feed rate limit: calls per screen device per clock minute (counted by the server function only).
+create table if not exists public.wall_feed_rate (
+  screen text primary key check (screen ~ '^R[1-3]C[1-7]$'),
+  window_start timestamptz not null,
+  hits integer not null
+);
+alter table public.wall_feed_rate enable row level security;
+revoke all on public.wall_feed_rate from anon, authenticated, public;
+
+create or replace function public.wall_feed_hit(p_screen text, p_limit integer) returns boolean
+language sql security definer set search_path = '' as $$
+  insert into public.wall_feed_rate as r (screen, window_start, hits)
+  values (p_screen, date_trunc('minute', now()), 1)
+  on conflict (screen) do update
+    set hits = case when r.window_start = excluded.window_start then r.hits + 1 else 1 end,
+        window_start = excluded.window_start
+  returning hits <= p_limit;
+$$;
+revoke all on function public.wall_feed_hit(text, integer) from public, anon, authenticated;
+grant execute on function public.wall_feed_hit(text, integer) to service_role;
+
 -- The refresh token of 'HMG Wall Reader' lives in Supabase Vault under the name 'wall_reader_refresh_token'.
 -- These three functions are the only way to it, and only the service role may call them.
 create or replace function public.wall_reader_token_get() returns text

@@ -5,7 +5,8 @@ import { checkScreen } from "../_shared/device.mjs";
 import { screenView, findSecretLike } from "../_shared/snapshot.mjs";
 import { json, preflight, readJson, originAllowed } from "../_shared/http.mjs";
 
-const STATES = new Set(["showing", "loading", "waiting", "error", "clear", "stale", "nodata"]);
+export const FEED_LIMIT_PER_MIN = 6;
+const STATES =new Set(["showing", "loading", "waiting", "error", "clear", "stale", "nodata"]);
 const CODE_RE = /^[A-Z_]{1,32}$/;
 const SHOWING_RE = /^[A-Za-z0-9_:.-]{1,64}$/;
 
@@ -36,6 +37,10 @@ export async function handle(req, { env, db, now }) {
   let chk;
   try { chk = await checkScreen(db, b.s, b.k, b.d); } catch (_) { return json(req, env, 503, { error: "retry_later" }); }
   if (!chk.ok) return json(req, env, 401, { error: "denied" });
+  // per-device rate limit (a player asks once a minute; 6 leaves room for reloads)
+  let within;
+  try { within = await db.feedHit(b.s, FEED_LIMIT_PER_MIN, now()); } catch (_) { return json(req, env, 503, { error: "retry_later" }); }
+  if (!within) return json(req, env, 429, { error: "slow_down" });
   const nowIso = new Date(now()).toISOString();
   try {
     const hr = cleanHealth(b.s, b.h, nowIso);

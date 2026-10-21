@@ -364,7 +364,8 @@ function canvasStart(){
     await Promise.all(["wall-clock.js","wall-render.js","wall-feed-client.js"].map(loadScript));
     const fnBase=String(C.SUPA_URL).replace(/\/$/,"")+"/functions/v1/";
     const hdr={apikey:C.SUPA_KEY,Authorization:"Bearer "+C.SUPA_KEY};
-    CANVAS.clock=WallClock.create({url:fnBase+"clock",headers:hdr});
+    /* time from the read-only database function (REST API); the edge function `clock` only as fallback */
+    CANVAS.clock=WallClock.create({url:String(C.SUPA_URL).replace(/\/$/,"")+"/rest/v1/rpc/wall_now",fallbackUrl:fnBase+"clock",headers:hdr});
     try{ await CANVAS.clock.start(); }catch(e){ CANVAS.err="CLOCK_UNREACHABLE"; }
     CANVAS.feed=WallFeed.create({url:fnBase+"wall-feed",anonKey:C.SUPA_KEY,screen:SCREEN,key:KEY,device:deviceSecret(),
       now:NOW,storage:safeStorage(),health:healthNow});

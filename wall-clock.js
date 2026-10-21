@@ -1,6 +1,8 @@
 /* wall-clock.js - one shared clock for all 21 screens (used only when settings.data.canvasPages is on).
-   Start: 8 samples of the `clock` function; offset = server time - midpoint of send and receive.
-   Every 60 s: 3 more samples. Samples are kept for 30 minutes; only those whose round trip is close to
+   Time source: the read-only database function rpc/wall_now (REST API, outside the edge-function quota);
+   the edge function `clock` is used only when that call fails.
+   Start: 8 samples; offset = server time - midpoint of send and receive.
+   Every 60 s: 8 more samples. Samples are kept for 30 minutes; only those whose round trip is close to
    the smallest seen are trusted (a slow leg makes the midpoint wrong). A straight line through the
    trusted samples gives the offset and this PC's clock drift.
    The shown offset is slewed (moved at most 5 ms per second plus the drift), never jumped, so motion
@@ -15,7 +17,7 @@
     var perfNow = opt.perfNow || function () { return root.performance.now(); };
     var dateNow = opt.dateNow || function () { return Date.now(); };
     var setIv = opt.setInterval || function (f, ms) { return root.setInterval(f, ms); };
-    var N_START = opt.samples || 8, N_RESYNC = opt.resyncSamples || 3;
+    var N_START = opt.samples || 8, N_RESYNC = opt.resyncSamples || 8;
     var RESYNC_MS = opt.resyncMs || 60000;
     var SLEW = opt.slewMsPerSec || 5;            /* at most 5 ms of correction per second */
     var STEP_MS = opt.stepThresholdMs || 1000;   /* confirmed errors bigger than this are stepped */
@@ -24,7 +26,7 @@
     var MAX_DRIFT = 500e-6;                      /* a PC clock is never trusted to be off by more than 500 ppm */
     var base = dateNow() - perfNow();
     var hist = [], pend = [], model = null, disp = 0, lastP = 0, synced = false;
-    var last = { rtt: null, samples: 0, failures: 0, trusted: 0 };
+    var last = { rtt: null, samples: 0, failures: 0, trusted: 0, bySource: { main: 0, fallback: 0 } };
     var timer = null;
 
     function predict(p) { return model ? model.a + model.b * (p - model.pm) : 0; }
@@ -66,15 +68,21 @@
     }
     function now() { return base + perfNow() + currentOffset(); }
 
-    function one() {
+    /* one sample from one source; the answer is a plain number (database function) or {t} (edge function) */
+    function from(url, src) {
       var t0 = perfNow();
-      return Promise.resolve(doFetch(opt.url, { method: "GET", headers: opt.headers || {}, cache: "no-store" }))
+      return Promise.resolve(doFetch(url, { method: "GET", headers: opt.headers || {}, cache: "no-store" }))
         .then(function (r) { if (!r || !r.ok) throw new Error("clock http"); return r.json(); })
         .then(function (j) {
-          var t1 = perfNow();
-          if (!j || typeof j.t !== "number" || !isFinite(j.t)) throw new Error("clock body");
-          return { p: (t0 + t1) / 2, rtt: t1 - t0, off: j.t - (base + (t0 + t1) / 2) };
+          var t1 = perfNow(), t = (typeof j === "number") ? j : (j && j.t);
+          if (typeof t !== "number" || !isFinite(t)) throw new Error("clock body");
+          last.bySource[src]++;
+          return { p: (t0 + t1) / 2, rtt: t1 - t0, off: t - (base + (t0 + t1) / 2) };
         });
+    }
+    function one() {
+      var p = from(opt.url, "main");
+      return opt.fallbackUrl ? p.then(null, function () { return from(opt.fallbackUrl, "fallback"); }) : p;
     }
     function sample(n) {
       var i = 0, got = [];
@@ -123,7 +131,7 @@
     }
     function stats() {
       return { synced: synced, offsetMs: Math.round(currentOffset()), rttMs: last.rtt, samples: last.samples,
-        failures: last.failures, trusted: last.trusted, driftPpm: model ? Math.round(model.b * 1e6) : 0 };
+        failures: last.failures, trusted: last.trusted, fromMain: last.bySource.main, fromFallback: last.bySource.fallback, driftPpm: model ? Math.round(model.b * 1e6) : 0 };
     }
     return { start: start, now: now, stats: stats, isSynced: function () { return synced; },
       resync: function () { return sample(N_RESYNC).then(apply); } };
