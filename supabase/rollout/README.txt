@@ -16,4 +16,8 @@ new player sends exactly today's requests and refuses an empty key cell, as toda
 start-up key check and the session record that the console's step 6 and 7 gates count come only with one of them
 on. So, BEFORE step 6: tick "Screen PC checks" in the console's labs box (console.html?labs=1), Save, then press
 "Reload all screens" and wait one minute. Never apply step 9 with deviceChecks off: with it off an empty key cell
-stops every screen (today's rule). Undo: untick, Save, "Reload all screens".
+stops every screen (today's rule).
+Undo of deviceChecks: untick, Save, "Reload all screens" ONLY while step 9 is not applied. After step 9, first undo
+step 9 and put the key cell back (see the step 9 undo), and only then untick. Why: with both switches off an empty
+key cell refuses every screen, and a refused screen stops listening, so "Reload all screens" can no longer reach it;
+each screen PC would then need a manual refresh. The same holds for turning canvasPages off after step 9.

@@ -37,11 +37,11 @@
   /* switch + layout */
   var r1 = h("div", { "class": "row" });
   var sw = h("input", { type: "checkbox", id: "labsOn", style: "width:auto" });
-  r1.appendChild(sw); r1.appendChild(h("label", { "for": "labsOn" }, "Use wall pages, shared clock and figures (off = the wall works exactly as today)"));
+  r1.appendChild(sw); r1.appendChild(h("label", { "for": "labsOn" }, "Use wall pages, shared clock and figures (off = the wall works exactly as today; after rollout step 9, put the key cell back first: with both off an empty key cell stops every screen and only a manual refresh of each PC brings it back)"));
   box.appendChild(r1);
   var r1b = h("div", { "class": "row" });
   var dc = h("input", { type: "checkbox", id: "labsDev", style: "width:auto" });
-  r1b.appendChild(dc); r1b.appendChild(h("label", { "for": "labsDev" }, "Screen PC checks: new report requests and the start-up key check (rollout: turn on, Save, then Reload all screens, before step 6; off = today's requests)"));
+  r1b.appendChild(dc); r1b.appendChild(h("label", { "for": "labsDev" }, "Screen PC checks: new report requests and the start-up key check (rollout: turn on, Save, then Reload all screens, before step 6; off = today's requests; after rollout step 9, put the key cell back first: with both off an empty key cell stops every screen and only a manual refresh of each PC brings it back)"));
   box.appendChild(r1b);
   var r2 = h("div", { "class": "row" });
   r2.appendChild(h("label", { style: "width:170px" }, "Bezel between screens (px)"));
@@ -81,8 +81,11 @@
     sf.value = String(wl.safePx != null ? wl.safePx : L.DEFAULT_SAFE_PX);
   }
   save.onclick = async function () {
-    var cur = await sb.from("settings").select("data").eq("id", "main").single();
+    var cur = await sb.from("settings").select("data,screen_key").eq("id", "main").single();
     if (cur.error) return alert("Could not read the settings");
+    /* both switches off while the key cell is empty (after rollout step 9): every screen would stop and could not be reloaded from here */
+    if (!sw.checked && !dc.checked && !cur.data.screen_key &&
+        !confirm("The screen key cell is empty (rollout step 9 is applied). With both switches off every screen stops, and Reload all screens cannot reach them: each screen PC would need a manual refresh. Put the key cell back first (step 9 undo). Save anyway?")) return;
     var d = Object.assign({}, cur.data.data || {}, { canvasPages: sw.checked, deviceChecks: dc.checked,
       wallLayout: { bezelPx: Math.max(0, Math.min(400, Math.round(+bz.value || 0))), safePx: Math.max(0, Math.min(400, Math.round(+sf.value || 0))) } });
     var up = await sb.from("settings").update({ data: d, updated_at: new Date().toISOString() }).eq("id", "main");
