@@ -7,7 +7,7 @@
 //   src/wall21/proof180/q180_mt_units.dax  88eaf5a19e308c88b483bd7d18559dd116fcf82156c8574e2ebacdc37df3e776
 //   src/wall21/proof180/columns_180.txt  ace29e7eb95448656b853394d603e21a6e8aac508ea18cdc48096a143990adf4
 //   src/wall21/allow2/wall_fm_events_v3.dax  93cfb72ec13e86fb0d2444be1348a3beb5f46b4c4827ddd2443c7bd83d3b3df8
-//   work/WS-wall21/handoff/allowlist_v2_1.txt  0f4084c6385333887a67608f3dbb7f9d4b1434af1455cdc542ff3d3d455b65b5
+//   work/WS-wall21/handoff/allowlist_v2_1.txt  d69d1f184f8814d3b989f523d406bf8347d466895881c2e13f1fae83b96906bc
 //   exports/wall_179_20261022_132510/wall_ecc_oneday_v1_result.json  6e8b21318b6c31d33f990f5f414c1eefebceb9781f6e4dc6d16662d8849b07e1
 //   exports/wall_179_20261022_132510/wall_mt_oneday_v1_result.json  81d8a5632b26b75d6c6b9ec9535a7ca493ca1f274646fbb42972388c0405588e
 //   exports/wall_180_20261022_142517/wall_mt_units_v1_result.json  78068268a3d193b7a7d0df29753372ec7852a1c4154f26658d345561d095b961
@@ -15,7 +15,7 @@
 // known: every column the query returns; any other column rejects the whole snapshot. allow: the checked columns;
 // store:false = checked, then dropped. rules: cross-column checks (snapshot.mjs). table: one row per item (events).
 // proof: the run log that proved the query; "pending" = the job does not run it yet.
-export const ALLOWLIST_SHA256 = "0f4084c6385333887a67608f3dbb7f9d4b1434af1455cdc542ff3d3d455b65b5";
+export const ALLOWLIST_SHA256 = "d69d1f184f8814d3b989f523d406bf8347d466895881c2e13f1fae83b96906bc";
 export const QUERIES = [
  {
   "id": "wall-ecc-v1",
@@ -745,7 +745,8 @@ export const QUERIES = [
     "sep": "; ",
     "maxParts": 3,
     "part": "^[\\p{L}\\p{N} ,:/()+.-]+$",
-    "emptyIsBlank": true
+    "emptyIsBlank": true,
+    "store": false
    },
    "tgt_fm_response_min": {
     "type": "num",

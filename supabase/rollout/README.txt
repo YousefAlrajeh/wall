@@ -10,3 +10,10 @@ at once would empty the screen key cell and stop every old player.
 
 Undo rule: undo strictly from the last applied step backwards. Once step 9 is applied, its undo
 (and putting the key cell back) comes first, before any other undo.
+
+Players (round 3, builder_port3.md): with settings.data.canvasPages and settings.data.deviceChecks both off, the
+new player sends exactly today's requests and refuses an empty key cell, as today. The new report requests, the
+start-up key check and the session record that the console's step 6 and 7 gates count come only with one of them
+on. So, BEFORE step 6: tick "Screen PC checks" in the console's labs box (console.html?labs=1), Save, then press
+"Reload all screens" and wait one minute. Never apply step 9 with deviceChecks off: with it off an empty key cell
+stops every screen (today's rule). Undo: untick, Save, "Reload all screens".

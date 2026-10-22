@@ -1,6 +1,7 @@
 /* console-labs.js - "Wall pages (testing)" box. Loaded only when the console is opened as console.html?labs=1
    by a signed-in admin. Without ?labs=1 the console is exactly as before.
    - the feature switch settings.data.canvasPages and the bezel / safe margin (settings.data.wallLayout)
+   - settings.data.deviceChecks: the players' new report requests and start-up key check (security rollout: on before step 6)
    - one-time sign-in of the figures account (function wall-reader-signin; no token ever comes back here)
    - screen health grid (table screen_health, admins only)
    All text is set with textContent. */
@@ -38,6 +39,10 @@
   var sw = h("input", { type: "checkbox", id: "labsOn", style: "width:auto" });
   r1.appendChild(sw); r1.appendChild(h("label", { "for": "labsOn" }, "Use wall pages, shared clock and figures (off = the wall works exactly as today)"));
   box.appendChild(r1);
+  var r1b = h("div", { "class": "row" });
+  var dc = h("input", { type: "checkbox", id: "labsDev", style: "width:auto" });
+  r1b.appendChild(dc); r1b.appendChild(h("label", { "for": "labsDev" }, "Screen PC checks: new report requests and the start-up key check (rollout: turn on, Save, then Reload all screens, before step 6; off = today's requests)"));
+  box.appendChild(r1b);
   var r2 = h("div", { "class": "row" });
   r2.appendChild(h("label", { style: "width:170px" }, "Bezel between screens (px)"));
   var bz = h("input", { type: "number", min: "0", max: "400", value: String(L.DEFAULT_BEZEL_PX), style: "width:80px;" + css });
@@ -70,6 +75,7 @@
   function paintSettings() {
     var st = window.ST_settings && window.ST_settings(); var d = (st && st.data) || {};
     sw.checked = d.canvasPages === true;
+    dc.checked = d.deviceChecks === true;
     var wl = d.wallLayout || {};
     bz.value = String(wl.bezelPx != null ? wl.bezelPx : L.DEFAULT_BEZEL_PX);
     sf.value = String(wl.safePx != null ? wl.safePx : L.DEFAULT_SAFE_PX);
@@ -77,7 +83,7 @@
   save.onclick = async function () {
     var cur = await sb.from("settings").select("data").eq("id", "main").single();
     if (cur.error) return alert("Could not read the settings");
-    var d = Object.assign({}, cur.data.data || {}, { canvasPages: sw.checked,
+    var d = Object.assign({}, cur.data.data || {}, { canvasPages: sw.checked, deviceChecks: dc.checked,
       wallLayout: { bezelPx: Math.max(0, Math.min(400, Math.round(+bz.value || 0))), safePx: Math.max(0, Math.min(400, Math.round(+sf.value || 0))) } });
     var up = await sb.from("settings").update({ data: d, updated_at: new Date().toISOString() }).eq("id", "main");
     if (up.error) return alert("Could not save the settings");

@@ -484,6 +484,20 @@ async function screenCheck(){
     if(r.ok&&j&&j.key===true&&j.enrolled===false&&j.required===true) enrolNotice(true);
   }catch(e){}
 }
+/* switch on and the key cell empty or hidden: the server must confirm the key at start. "ok" | "bad" | "unreachable" */
+async function serverKey(){
+  try{
+    const r=await tokenPost({action:"check",s:SCREEN,k:KEY,d:DEVICE,sid:(qs.get("mirror")==="1"?"":SID)});
+    let j=null; try{ j=await r.json(); }catch(e){}
+    if(r.ok&&j&&j.key===true) return "ok";
+    if(r.status===403&&j&&j.error==="bad key"){ /* the old function answers "bad key" to every new-form call: ask it the old way */
+      const r2=await fetch(C.TOKEN_FN+"?content=__keycheck__&k="+encodeURIComponent(KEY)); let j2=null; try{ j2=await r2.json(); }catch(e){}
+      if(r2.status===403&&j2&&j2.error==="bad key") return "bad";
+      if(r2.status===400){ LEGACY_FN=true; return "ok"; } /* old function: key accepted, unknown content */
+    }
+    return "unreachable";
+  }catch(e){ return "unreachable"; }
+}
 function refuseKey(){
   STOP=true; gen++; cleanBuf(front); cleanBuf(back); front.el.classList.remove("front"); currentUrl=null;
   document.getElementById("keyerr").style.display="flex";
@@ -505,15 +519,24 @@ function identifyFlash(){ const d=document.getElementById("identify");
   try{ await loadAll(); }
   catch(e){ document.getElementById("keyerr").textContent="Cannot reach the wall database.\nCheck internet / setup."; 
     document.getElementById("keyerr").style.display="flex"; console.error(e); return; }
-  if((SETTINGS._screen_key && KEY!==SETTINGS._screen_key) || !KEY){
+  /* key check. Both switches off (canvasPages, deviceChecks): main's exact rule, so an empty or hidden key cell refuses every screen.
+     Either on: a key cell that is present must equal the key; an empty or hidden cell (rollout step 9) refuses unless the server
+     itself confirms this key first, so it is never weaker than main; nothing plays before that answer. */
+  const SEC=SETTINGS.canvasPages===true||SETTINGS.deviceChecks===true;
+  let keyRes=null;
+  if(SEC&&KEY&&!SETTINGS._screen_key) keyRes=await serverKey();
+  if(!SEC ? (!SETTINGS._screen_key || KEY!==SETTINGS._screen_key) : (!KEY || (SETTINGS._screen_key ? KEY!==SETTINGS._screen_key : keyRes!=="ok"))){
     document.getElementById("keyerr").style.display="flex";
-    document.getElementById("boot").style.display="none"; return; }
+    document.getElementById("boot").style.display="none";
+    if(keyRes==="unreachable") after(60000,()=>location.reload()); /* the server could not answer: ask again in a minute (still refused meanwhile) */
+    return; }
   if(SETTINGS.canvasPages===true) canvasStart();
   subscribe();
   tick();
   setInterval(tick,1000);
   /* both switches off (canvasPages, deviceChecks): exactly today's network traffic (old GET token form, no background key check);
-     either on: the new token form and the background key check (security rollout, paused D-237: deviceChecks goes on before its step 8) */
+     either on: the new token form and the background key check, which also records the screen's session for the console's
+     step 6 and 7 gates (security rollout, paused D-237: deviceChecks on, then "Reload all screens", BEFORE its step 6) */
   if(SETTINGS.canvasPages===true||SETTINGS.deviceChecks===true) screenCheck(); /* background: never delays or blanks the wall unless the server clearly refuses the key */
   else LEGACY_FN=true;
   setInterval(()=>{ const b=document.getElementById("bootWhy");

@@ -48,8 +48,6 @@ window.Story5eBuild = function (DATA) {
 
   if (LIVE) {
     S.cfg.updated = M.updated || "--:--"; S.cfg.capFoot = "";
-    S.cfg.headTitle = "Wall stories v5e with real figures (this PC only)";
-    S.cfg.headSub = "Real figures from the model (reads 177, 179 and 180). Local preview: do not share. Click any screen to see it at true size.";
   }
 
   /* builders: key = the figure's one home */
