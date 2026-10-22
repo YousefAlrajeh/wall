@@ -41,5 +41,9 @@ create policy media_admin_delete on storage.objects for delete to authenticated 
 
 commit;
 
--- Check after: signed in as an admin, the console saves a setting and uploads an image; as anon,
--- a media list is empty and a public media address still loads; screens unchanged.
+-- Check after: signed in as an admin, the console saves a setting and uploads an image; a public media
+-- address still loads in a browser; screens unchanged. As anon (SQL editor; prints counts only):
+--   begin; set local role anon; select count(*) as media_files_anon_can_list from storage.objects where bucket_id = 'media'; rollback;
+--     expected 0 (the list is closed; files still load by their public address, which does not use these rules)
+--   begin; set local role anon; select (select count(*) from public.settings) as settings_rows, (select count(*) from public.content) as content_rows; rollback;
+--     expected the same counts as before step 2b (players still read their tables)

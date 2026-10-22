@@ -32,3 +32,7 @@ create policy media_auth_update on storage.objects for update to authenticated u
 create policy media_auth_delete on storage.objects for delete to authenticated using (bucket_id = 'media');
 
 commit;
+
+-- Check after (as anon; prints a count only; expected the same count as before step 2b, more than 0 when the
+-- bucket has files):
+--   begin; set local role anon; select count(*) as media_files_anon_can_list from storage.objects where bucket_id = 'media'; rollback;
