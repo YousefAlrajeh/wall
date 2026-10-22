@@ -404,15 +404,21 @@ async function wpPage(id){
   if(WallRender.checkPage(p,WallLayout).some(x=>x==="PAGE_NOT_OBJECT"||x==="PAGE_ID")) throw new Error("page");
   CANVAS.pages[id]=p; return p;
 }
+/* the approved story design (engine "story5"): its scripts load once, in order, only when a screen first shows it */
+function storyReady(){
+  if(!CANVAS.story) CANVAS.story=(async()=>{ for(const s of ["wallstory/hmg_mark_mono_shape.js","wallstory/story_geo_public.js","wallstory/story5d_engine.js","wallstory/story5e_stories.js","wall-story.js"]) await loadScript(s); })();
+  return CANVAS.story;
+}
 async function wpLoad(b,cmd){
   await CANVAS.ready;
   const page=await wpPage(cmd.wallpage);
+  if(page.engine==="story5") await storyReady();
   if(!b.wp){ b.wp=document.createElement("div"); b.wp.className="wp";
     b.wp.style.cssText="position:absolute;inset:0;width:100%;height:100%;overflow:hidden;display:none;background:#000";
     b.el.appendChild(b.wp); }
   if(b.wpView){ try{b.wpView.destroy();}catch(e){} b.wpView=null; }
   b.ifr.style.display="none"; b.pbi.style.display="none"; b.wp.style.display="block";
-  b.wpView=WallRender.mount(b.wp,page,{screen:SCREEN,layout:WallLayout,now:NOW,feed:CANVAS.feed});
+  b.wpView=(page.engine==="story5"?WallStory:WallRender).mount(b.wp,page,{screen:SCREEN,layout:WallLayout,now:NOW,feed:CANVAS.feed});
   if(b.wpView.info().tilesSkipped) CANVAS.err="TILE_OUTSIDE_SAFE";
   /* wall pages never enter pbiReports, so the 10-minute report.refresh() below never touches them */
 }
