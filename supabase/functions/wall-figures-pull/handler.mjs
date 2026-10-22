@@ -23,8 +23,9 @@ export async function handle(req, { env, db, fetch: rawFetch, now, queries }) {
   const finish = async (status, extra) => {
     run.finished_at = new Date(now()).toISOString();
     run.ms = Math.round(now() - t0);
-    try { await db.logRun(run); } catch (_) { /* the answer below still says what happened */ }
-    return json(req, env, status, { result: run.result, reason: run.reason, at: run.at, queries: run.queries, rows: run.rows, dropped: run.dropped || 0, bytes: run.bytes, ms: run.ms, ...(extra || {}) });
+    const { skipped: _sk, ...row } = run; // the run table has no "skipped" column: that count goes in the answer only
+    try { await db.logRun(row); } catch (_) { /* the answer below still says what happened */ }
+    return json(req, env, status, { result: run.result, reason: run.reason, at: run.at, queries: run.queries, rows: run.rows, dropped: run.dropped || 0, bytes: run.bytes, ms: run.ms, ...(run.skipped ? { skipped: run.skipped } : {}), ...(extra || {}) });
   };
   const stop = (reason, at) => { run.result = "STOPPED"; run.reason = reason; run.at = at || null; return finish(200); };
 
@@ -59,6 +60,7 @@ export async function handle(req, { env, db, fetch: rawFetch, now, queries }) {
   run.dropped = 0;
   for (let qi = 0; qi < queries.length; qi++) {
     const q = queries[qi];
+    if (q.proof === "pending") { run.skipped = (run.skipped || 0) + 1; continue; } // allow-list v2: not run until its proof read is recorded
     if ((await sha256Hex(q.dax)) !== q.sha256) return stop("QUERY_CHANGED", { query: qi }); // byte for byte the checked DAX
     let r;
     const t0q = now();
@@ -68,7 +70,7 @@ export async function handle(req, { env, db, fetch: rawFetch, now, queries }) {
     if (!r.ok) return stop("HTTP_" + r.status, { query: qi });
     const v = validateQueryResult(q, qi, r.text, { queryTimes: [t0q, t1q] });
     if (!v.ok) return stop(v.reason, v.at);
-    run.rows += 1;
+    run.rows += v.rows === undefined ? 1 : v.rows;
     run.dropped += v.dropped;
     parts.push({ page: q.page, figures: v.figures });
   }

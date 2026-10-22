@@ -1,10 +1,13 @@
-// snapshot.mjs - strict checks for the wall's figures (allow-list v1, D-231, checker_176 R1-R4).
+// snapshot.mjs - strict checks for the wall's figures (allow-list v1, D-231, checker_176 R1-R4; allow-list v2 additions below).
 // Rules: every returned column must be a known column of its query (columns_v1), or the WHOLE
 // snapshot is rejected; known columns outside the allow-list are dropped; each allowed column has its
 // own check (number range, date, fixed text pattern, or the split list of next events);
 // blank numbers are kept as null, which screens show as "No data for these dates".
 // Any surprise rejects the whole snapshot; the last good one stays.
 // Reasons carry codes and positions only, never data text.
+// Allow-list v2 adds (WS-wall21 Phase 3): per-column role (store:false = checked, then dropped), whole numbers (int),
+// cross-column rules (q.rules: 5-or-more cases, 1-4 counts, day windows, D-238 withheld names), one-table answers with
+// many rows (q.table, e.g. one row per event), and q.proof ("pending" = the job does not run that query yet).
 
 export const LIMITS = {
   RESPONSE_BYTES: 262144,   // one Execute Queries answer (proof run: about 2 KB each)
@@ -12,7 +15,11 @@ export const LIMITS = {
   TEXT_CHARS: 120,          // hard ceiling for any text column (fm_next_events)
   MAX_QUERIES: 10,
   MAX_COLUMNS: 200,
+  DAX_CHARS: 65536,         // longest checked query: read 179 MT, 59,794 characters
+  MAX_TABLE_ROWS: 500,      // ceiling for q.table.maxRows
 };
+const RULE_TYPES = new Set(["suppressed", "count", "day", "isToday", "withheld", "rowDates"]);
+const PROOF_RE = /^(pending|[A-Za-z0-9_]{1,80})$/;
 
 // Column names that suggest a person, an identifier or free text. Never allowed in the allow-list,
 // and named as the reason when such a column turns up unexpectedly.
@@ -47,7 +54,9 @@ export function checkAllowList(queries) {
     if (JSON.stringify(q).includes("<<")) return fail("NOT_CONFIGURED", { query: qi });
     if (!q || typeof q.id !== "string" || ids.has(q.id) || !PAGE_RE.test(q.page || "") || pages.has(q.page)) return fail("ALLOWLIST_BAD", { query: qi });
     ids.add(q.id); pages.add(q.page);
-    if (typeof q.dax !== "string" || !startsWithEvaluate(q.dax) || q.dax.length > 20000) return fail("ALLOWLIST_BAD", { query: qi });
+    if (typeof q.dax !== "string" || !startsWithEvaluate(q.dax) || q.dax.length > LIMITS.DAX_CHARS) return fail("ALLOWLIST_BAD", { query: qi });
+    if (q.proof !== undefined && !PROOF_RE.test(String(q.proof))) return fail("ALLOWLIST_BAD", { query: qi });
+    if (q.table !== undefined && !(q.table && Number.isInteger(q.table.maxRows) && q.table.maxRows >= 1 && q.table.maxRows <= LIMITS.MAX_TABLE_ROWS)) return fail("ALLOWLIST_BAD", { query: qi });
     if (!HEX64_RE.test(q.sha256 || "")) return fail("ALLOWLIST_BAD", { query: qi });
     if (!Array.isArray(q.known) || !q.known.length || q.known.length > LIMITS.MAX_COLUMNS || new Set(q.known).size !== q.known.length) return fail("ALLOWLIST_BAD", { query: qi });
     for (let ci = 0; ci < q.known.length; ci++) if (!KEY_RE.test(q.known[ci])) return fail("ALLOWLIST_BAD", { query: qi, col: ci });
@@ -59,11 +68,23 @@ export function checkAllowList(queries) {
       if (NAME_LIKE_RE.test(k)) return fail("ALLOWLIST_NAME_LIKE", { query: qi, col: ci });
       if (!s || !TYPES.has(s.type)) return fail("ALLOWLIST_BAD", { query: qi, col: ci });
       if (s.type === "num" && !(isFinite(s.min) && isFinite(s.max) && s.min <= s.max)) return fail("ALLOWLIST_BAD", { query: qi, col: ci });
+      if (s.store !== undefined && typeof s.store !== "boolean") return fail("ALLOWLIST_BAD", { query: qi, col: ci });
       if (s.type === "text" || s.type === "list") {
         if (!(s.max >= 1 && s.max <= LIMITS.TEXT_CHARS)) return fail("ALLOWLIST_BAD", { query: qi, col: ci });
         try { new RegExp(s.type === "text" ? s.pattern : s.part, "u"); } catch (_) { return fail("ALLOWLIST_BAD", { query: qi, col: ci }); }
         if (s.type === "list" && !(typeof s.sep === "string" && s.sep.length && s.maxParts >= 1 && s.maxParts <= 10)) return fail("ALLOWLIST_BAD", { query: qi, col: ci });
       }
+    }
+    if (!keys.some((k) => q.allow[k].store !== false)) return fail("ALLOWLIST_BAD", { query: qi });
+    const rules = q.rules || [];
+    if (!Array.isArray(rules)) return fail("ALLOWLIST_BAD", { query: qi });
+    for (let ri = 0; ri < rules.length; ri++) {
+      const r = rules[ri];
+      if (!r || !RULE_TYPES.has(r.type)) return fail("ALLOWLIST_BAD", { query: qi, rule: ri });
+      const refs = [r.value, r.n, r.flag, r.day, r.start, r.end].concat(r.keys || []).filter((x) => x !== undefined);
+      if (!refs.length || refs.some((k) => !Object.prototype.hasOwnProperty.call(q.allow, k))) return fail("ALLOWLIST_BAD", { query: qi, rule: ri });
+      if (r.type === "day" && !(Number.isInteger(r.min) && Number.isInteger(r.max) && r.min <= r.max)) return fail("ALLOWLIST_BAD", { query: qi, rule: ri });
+      if ((r.type === "withheld" || r.type === "rowDates") && !q.table) return fail("ALLOWLIST_BAD", { query: qi, rule: ri });
     }
   }
   return { ok: true };
@@ -85,6 +106,7 @@ function checkValue(s, v) {
     if (v === null || v === undefined) return s.nullable ? [null, null] : ["NULL_VALUE"];
     if (typeof v !== "number" || !isFinite(v)) return ["NOT_A_NUMBER"];
     if (v < s.min || v > s.max) return ["OUT_OF_RANGE"];
+    if (s.int && !Number.isInteger(v)) return ["NOT_WHOLE"];
     return [null, v];
   }
   if (s.type === "date") {
@@ -94,6 +116,7 @@ function checkValue(s, v) {
   if (v === null || v === undefined || v === "") return (s.emptyIsBlank || s.nullable) ? [null, null] : ["NULL_VALUE"];
   if (typeof v !== "string") return ["BAD_TEXT"];
   if (v.length > s.max || !textGuard(v)) return ["BAD_TEXT"];
+  if (s.digitRun && new RegExp("[0-9]{" + (s.digitRun | 0) + ",}").test(v)) return ["BAD_TEXT"];
   if (s.type === "text") return new RegExp(s.pattern, "u").test(v) ? [null, v] : ["BAD_TEXT"];
   // list: split on the separator into at most maxParts items, each checked on its own
   const parts = v.split(s.sep);
@@ -118,19 +141,33 @@ export function validateQueryResult(q, qi, rawText, ctx) {
   const res = j.results[0];
   if (!res || res.error) return fail("RESP_ERROR", { query: qi });
   if (!Array.isArray(res.tables) || res.tables.length !== 1) return fail("TABLE_COUNT", { query: qi });
+  if (res.tables[0] && res.tables[0].error) return fail("RESP_ERROR", { query: qi });
   const rows = res.tables[0] && res.tables[0].rows;
   if (!Array.isArray(rows)) return fail("RESP_SHAPE", { query: qi });
-  if (rows.length !== 1) return fail("ROW_COUNT", { query: qi, rows: rows.length });
-  const row = rows[0];
-  if (!row || typeof row !== "object" || Array.isArray(row)) return fail("RESP_SHAPE", { query: qi, row: 0 });
+  if (q.table ? rows.length > q.table.maxRows : rows.length !== 1) return fail("ROW_COUNT", { query: qi, rows: rows.length });
+  const out = [];
+  let dropped = 0;
+  for (let ri = 0; ri < rows.length; ri++) {
+    const v = checkRow(q, qi, q.table ? ri : undefined, rows[ri], ctx);
+    if (!v.ok) return v;
+    out.push(v.figures); dropped += v.dropped;
+  }
+  if (q.table) return { ok: true, figures: { rows: out }, dropped, rows: out.length };
+  return { ok: true, figures: out[0], dropped };
+}
+
+// one answer row: exact known columns, each allowed column checked, the cross-column rules, then only "store" columns kept
+function checkRow(q, qi, ri, row, ctx) {
+  const at = (x) => (ri === undefined ? Object.assign({ query: qi }, x) : Object.assign({ query: qi, row: ri }, x));
+  if (!row || typeof row !== "object" || Array.isArray(row)) return fail("RESP_SHAPE", at({ row: ri === undefined ? 0 : ri }));
   const got = Object.keys(row);
-  if (got.length > LIMITS.MAX_COLUMNS) return fail("COLUMN_COUNT", { query: qi, cols: got.length });
+  if (got.length > LIMITS.MAX_COLUMNS) return fail("COLUMN_COUNT", at({ cols: got.length }));
   const byKey = {};
   for (let ci = 0; ci < got.length; ci++) {
     const m = got[ci].match(/^\[([^\[\]]{1,80})\]$/);       // Execute Queries form: [key]
     const k = m ? m[1] : null;
     if (k === null || !q.known.includes(k)) {
-      return fail(NAME_LIKE_RE.test(got[ci]) ? "NAME_LIKE_COLUMN" : "UNKNOWN_COLUMN", { query: qi, col: ci });
+      return fail(NAME_LIKE_RE.test(got[ci]) ? "NAME_LIKE_COLUMN" : "UNKNOWN_COLUMN", at({ col: ci }));
     }
     byKey[k] = row[got[ci]];
   }
@@ -138,21 +175,68 @@ export function validateQueryResult(q, qi, rawText, ctx) {
   const keys = Object.keys(q.allow);
   for (let ci = 0; ci < keys.length; ci++) {
     const k = keys[ci];
-    if (!Object.prototype.hasOwnProperty.call(byKey, k)) return fail("MISSING_COLUMN", { query: qi, col: ci });
+    if (!Object.prototype.hasOwnProperty.call(byKey, k)) return fail("MISSING_COLUMN", at({ col: ci }));
     const [why, val] = checkValue(q.allow[k], byKey[k]);
-    if (why) return fail(why, { query: qi, col: ci, len: typeof byKey[k] === "string" ? byKey[k].length : undefined });
+    if (why) return fail(why, at({ col: ci, len: typeof byKey[k] === "string" ? byKey[k].length : undefined }));
     figures[k] = val;
   }
   // dates: d_today = the UTC date when the query ran; the windows follow from it
   if (Object.prototype.hasOwnProperty.call(figures, "d_today")) {
     const t = ctx && ctx.queryTimes;
-    if (!t || ![isoDay(t[0]), isoDay(t[1])].includes(figures.d_today)) return fail("DATE_NOT_TODAY", { query: qi });
+    if (!t || ![isoDay(t[0]), isoDay(t[1])].includes(figures.d_today)) return fail("DATE_NOT_TODAY", at({}));
     const d = figures.d_today;
     if (("d_w30_from" in figures && figures.d_w30_from !== addDays(d, -29)) ||
         ("d_b30_from" in figures && figures.d_b30_from !== addDays(d, -59)) ||
-        ("d_b30_to" in figures && figures.d_b30_to !== addDays(d, -30))) return fail("DATE_WINDOW", { query: qi });
+        ("d_b30_to" in figures && figures.d_b30_to !== addDays(d, -30))) return fail("DATE_WINDOW", at({}));
   }
-  return { ok: true, figures, dropped: got.length - keys.length };
+  const rules = q.rules || [];
+  for (let k = 0; k < rules.length; k++) {
+    const why = ruleBroken(rules[k], figures);
+    if (why) return fail(why, at({ rule: k }));
+  }
+  const kept = {};
+  for (const k of keys) if (q.allow[k].store !== false) kept[k] = figures[k];
+  return { ok: true, figures: kept, dropped: got.length - Object.keys(kept).length };
+}
+
+// the allow-list v2 cross-column rules; returns a reason code or null
+function blank(v) { return v === null || v === undefined || v === ""; }
+function ruleBroken(r, f) {
+  const today = f.d_today;
+  if (r.type === "suppressed") {        // a share or typical time: shown only with 5 or more cases behind it
+    const v = f[r.value], n = f[r.n], fl = f[r.flag];
+    if (!blank(n) && n > 0 && n < 5) return "SMALL_N_VISIBLE";
+    if (fl === 1 && (!blank(v) || !blank(n))) return "SUPPRESSION";
+    if (!blank(v) && (blank(n) || n < 5 || fl === 1)) return "SUPPRESSION";
+    return null;
+  }
+  if (r.type === "count") {             // a count of cases: 1-4 never shown; flag 1 means blank
+    const v = f[r.value], fl = f[r.flag];
+    if (!blank(v) && v >= 1 && v <= 4) return "SMALL_COUNT";
+    if (fl === 1 && !blank(v)) return "SUPPRESSION";
+    return null;
+  }
+  if (r.type === "day") {               // the day of these values lies in its window; no day means no values
+    const d = f[r.day];
+    if (blank(d)) return (r.keys || []).some((k) => !blank(f[k])) ? "DAY_RULE" : null;
+    if (blank(today) || d < addDays(today, r.min) || d > addDays(today, r.max)) return "DAY_RULE";
+    return null;
+  }
+  if (r.type === "isToday") {
+    const d = f[r.day], fl = f[r.flag];
+    if (blank(d)) return blank(fl) || fl === 0 ? null : "DAY_RULE";
+    return fl === (d === today ? 1 : 0) ? null : "DAY_RULE";
+  }
+  if (r.type === "withheld") {          // D-238: a withheld event keeps no name at all
+    if (f[r.flag] === 1 && (r.keys || []).some((k) => !blank(f[k]))) return "NAME_NOT_WITHHELD";
+    return null;
+  }
+  if (r.type === "rowDates") {          // an event running today: started on or before today, not ended before today
+    const s = f[r.start], e = f[r.end];
+    if (blank(today) || blank(s) || s > today || (!blank(e) && e < today)) return "DAY_RULE";
+    return null;
+  }
+  return "RULE_UNKNOWN";
 }
 
 // Any key or value that looks like a credential. Used on everything a screen receives.
