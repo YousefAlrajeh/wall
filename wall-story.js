@@ -57,9 +57,13 @@
       var byCity = {}, pset = {}, nset = {};
       evs.forEach(function (e) { byCity[e.c] = (byCity[e.c] || 0) + 1; if (e.p) pset[e.p] = 1; if (e.n) nset[e.n] = 1; });
       var projects = Object.keys(pset).sort(lower);
-      events = { running: evs.length, cities: Object.keys(byCity).length, byCity: byCity,
+      /* the counts are FTM Overview's own (allow-list v2.1: projects_today, cities_today on every row, [FTM Ach Volumes] ev_proj and
+         ev_city for today): withheld and blank names still count, and city spellings are not merged in the count; the D-234 merge
+         shows on the map labels only (byCity). Without those columns (v2 rows) the counts fall back to the rows themselves. */
+      var r0 = V.rows[0] || {}, hasC = has(r0, "projects_today") && has(r0, "cities_today");
+      events = { running: evs.length, cities: hasC ? r0.cities_today : (V.rows.length ? Object.keys(byCity).length : 0), byCity: byCity,
         starting: evs.filter(function (e) { return e.st; }).length, ending: evs.filter(function (e) { return e.en; }).length,
-        projects: projects, projectCount: projects.length, names: Object.keys(nset).sort(lower),
+        projects: projects, projectCount: hasC ? r0.projects_today : projects.length, names: Object.keys(nset).sort(lower),
         startList: evs.filter(function (e) { return e.st; }).map(function (e) { return e.n; }), endList: evs.filter(function (e) { return e.en; }).map(function (e) { return e.n; }) };
     }
     var cities = {};

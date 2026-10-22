@@ -18,7 +18,7 @@ export const LIMITS = {
   DAX_CHARS: 65536,         // longest checked query: read 179 MT, 59,794 characters
   MAX_TABLE_ROWS: 500,      // ceiling for q.table.maxRows
 };
-const RULE_TYPES = new Set(["suppressed", "count", "day", "isToday", "withheld", "rowDates"]);
+const RULE_TYPES = new Set(["suppressed", "count", "day", "isToday", "withheld", "rowDates", "tableCounts"]);
 const PROOF_RE = /^(pending|[A-Za-z0-9_]{1,80})$/;
 
 // Column names that suggest a person, an identifier or free text. Never allowed in the allow-list,
@@ -84,7 +84,7 @@ export function checkAllowList(queries) {
       const refs = [r.value, r.n, r.flag, r.day, r.start, r.end].concat(r.keys || []).filter((x) => x !== undefined);
       if (!refs.length || refs.some((k) => !Object.prototype.hasOwnProperty.call(q.allow, k))) return fail("ALLOWLIST_BAD", { query: qi, rule: ri });
       if (r.type === "day" && !(Number.isInteger(r.min) && Number.isInteger(r.max) && r.min <= r.max)) return fail("ALLOWLIST_BAD", { query: qi, rule: ri });
-      if ((r.type === "withheld" || r.type === "rowDates") && !q.table) return fail("ALLOWLIST_BAD", { query: qi, rule: ri });
+      if ((r.type === "withheld" || r.type === "rowDates" || r.type === "tableCounts") && !q.table) return fail("ALLOWLIST_BAD", { query: qi, rule: ri });
     }
   }
   return { ok: true };
@@ -152,7 +152,20 @@ export function validateQueryResult(q, qi, rawText, ctx) {
     if (!v.ok) return v;
     out.push(v.figures); dropped += v.dropped;
   }
-  if (q.table) return { ok: true, figures: { rows: out }, dropped, rows: out.length };
+  if (q.table) {
+    // tableCounts: counts the query gives on every row (FTM Overview's own, e.g. projects and cities today) must be the same on
+    // every row and at most the number of rows; the first must be 1 or more when there is a row
+    const rules = q.rules || [];
+    for (let k = 0; k < rules.length; k++) {
+      const r = rules[k];
+      if (r.type !== "tableCounts") continue;
+      for (let ki = 0; ki < r.keys.length; ki++) {
+        const key = r.keys[ki];
+        if (out.some((x) => x[key] !== out[0][key] || x[key] > out.length) || (out.length && ki === 0 && !(out[0][key] >= 1))) return fail("TABLE_COUNTS", { query: qi, rule: k });
+      }
+    }
+    return { ok: true, figures: { rows: out }, dropped, rows: out.length };
+  }
   return { ok: true, figures: out[0], dropped };
 }
 
@@ -236,6 +249,7 @@ function ruleBroken(r, f) {
     if (blank(today) || blank(s) || s > today || (!blank(e) && e < today)) return "DAY_RULE";
     return null;
   }
+  if (r.type === "tableCounts") return null;   // checked over the whole table in validateQueryResult
   return "RULE_UNKNOWN";
 }
 
