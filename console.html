@@ -472,17 +472,23 @@ window.restartCheck=async()=>{ if(!confirm("Start the restart check now? Then re
 /* every new player reloads itself once (settings.data._reloadAt, always newer than the stored value); used before
    the checks of rollout steps 4, 7 and 8. The press time is also recorded by the SERVER (once the enrol function is
    deployed, step 4), and the list then shows which screens came back with their own link after the press (R3-L2). */
+/* when the server did not record the last press, the list shows no "came back after Reload all screens" count at all,
+   so the step 7(b) gate can never be read against an OLDER press time (checker_sec7 R7-L1) */
+let RELOAD_UNRECORDED=false;
 window.reloadAll=async()=>{ if(!confirm("Reload every screen now? Each screen goes black for a few seconds and asks for fresh reports."))return;
   let at=0; try{ const m=await adminPost(ENROL_FN,{action:"reload_mark"}); at=Date.parse(m.reload_at)||0; }catch(e){ at=0; }
   const cur=await sb.from("settings").select("data").eq("id","main").single(); if(cur.error||!cur.data)return alert("Could not read the settings");
   const d=Object.assign({},cur.data.data||{},{_reloadAt:Math.max(at||Date.now(),(+(cur.data.data||{})._reloadAt||0)+1)});
   const up=await sb.from("settings").update({data:d,updated_at:new Date().toISOString()}).eq("id","main");
   if(up.error) return alert("Could not send the reload");
-  load(); enrolList(); alert("Reload sent. Screens reload within a few seconds (a screen that missed it reloads within 5 minutes)."); };
+  RELOAD_UNRECORDED=!at;
+  load(); enrolList();
+  alert(at?"Reload sent. Screens reload within a few seconds (a screen that missed it reloads within 5 minutes)."
+    :"Reload sent, but the server did not record the time of this press, so the Screen PCs list cannot count the screens for it. Before rollout step 4 this is expected. From step 4 on, press Reload all screens again."); };
 window.enrolList=async()=>{ try{
   const j=await adminPost(ENROL_FN,{action:"list"}); const g=document.getElementById("enGrid"); g.textContent="";
   const since=j.restart_check_at?Date.parse(j.restart_check_at):0; let used=0, back=0, rel=0;
-  const relAt=j.reload_at?Date.parse(j.reload_at):0;
+  const relAt=(j.reload_at&&!RELOAD_UNRECORDED)?Date.parse(j.reload_at):0;
   for(const s2 of screens){ const d=(j.devices||[]).find(x=>x.screen===s2)||null;
     const made=d&&!d.revoked, usedOk=made&&d.last_session_at&&Date.parse(d.last_session_at)>=Date.parse(d.enrolled_at);
     const backOk=usedOk&&since&&Date.parse(d.last_session_at)>since; if(usedOk)used++; if(backOk)back++;
@@ -493,8 +499,9 @@ window.enrolList=async()=>{ try{
     t.textContent=!made?"no link yet":(!usedOk?"link made, not used yet":(since?(backOk?"back after restart":"not back yet"):"working"));
     if(!usedOk||(since&&!backOk)) t.style.color="#F0A04A"; c.appendChild(t); g.appendChild(c); }
   enNote.textContent=used+" of "+screens.length+" screen PCs working with their own link"+(since?"; "+back+" of "+screens.length+" came back after the restart check started at "+new Date(since).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"; not yet proven after a restart")
-    +(relAt?"; "+rel+" of "+screens.length+" came back with their own link after Reload all screens at "+new Date(relAt).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"")+".";
-  enNote.style.color=((since?back:0)===screens.length&&(!relAt||rel===screens.length))?"":"#F0A04A";
+    +(relAt?"; "+rel+" of "+screens.length+" came back with their own link after Reload all screens at "+new Date(relAt).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"")
+    +(RELOAD_UNRECORDED?"; the last Reload all screens press was not recorded by the server, so no count is shown for it: press it again":"")+".";
+  enNote.style.color=((since?back:0)===screens.length&&(!relAt||rel===screens.length)&&!RELOAD_UNRECORDED)?"":"#F0A04A";
 }catch(e){ enNote.textContent=e.message; enNote.style.color="#F0A04A"; } };
 window.enrolMake=async()=>{ const scr=enScr.value;
   if(!confirm("Make a new one-time link for "+scr+"? Its old link stops working."))return;

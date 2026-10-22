@@ -37,4 +37,6 @@ turning canvasPages off after step 9.
 
 Screen PCs whose browser storage is blocked (round 7, R3-M1): the player keeps the #d= secret in the address when
 the storage does not give it back, so in-page reloads keep it. Step 7 proves this for every PC: after the restart
-check, press "Reload all screens" and require "21 of 21 came back with their own link after Reload all screens".
+check, press "Reload all screens" and require "21 of 21 came back with their own link after Reload all screens at HH:MM"
+with HH:MM the time of that press (an older time is not this press; if the console says the press was not recorded, press
+again).
