@@ -23,7 +23,7 @@ export async function handle(req, { env, db, fetch: rawFetch, now, queries }) {
   const finish = async (status, extra) => {
     run.finished_at = new Date(now()).toISOString();
     run.ms = Math.round(now() - t0);
-    const { skipped: _sk, ...row } = run; // the run table has no "skipped" column: that count goes in the answer only
+    const { skipped: _sk, note: _nt, ...row } = run; // the run table has no "skipped" or "note" column: the note is in reason and at
     try { await db.logRun(row); } catch (_) { /* the answer below still says what happened */ }
     return json(req, env, status, { result: run.result, reason: run.reason, at: run.at, queries: run.queries, rows: run.rows, dropped: run.dropped || 0, bytes: run.bytes, ms: run.ms, ...(run.skipped ? { skipped: run.skipped } : {}), ...(extra || {}) });
   };
@@ -71,6 +71,8 @@ export async function handle(req, { env, db, fetch: rawFetch, now, queries }) {
     const v = validateQueryResult(q, qi, r.text, { queryTimes: [t0q, t1q] });
     if (!v.ok) return stop(v.reason, v.at);
     run.rows += v.rows === undefined ? 1 : v.rows;
+    // a label that differs from its pinned text: the pinned text is kept; the run row says LABEL_PINNED and where (never the text)
+    if (v.notes && v.notes.length && !run.note) run.note = v.notes[0];
     run.dropped += v.dropped;
     parts.push({ page: q.page, figures: v.figures });
   }
@@ -78,6 +80,7 @@ export async function handle(req, { env, db, fetch: rawFetch, now, queries }) {
   if (!built.ok) return stop(built.reason, built.at);
   try { await db.putSnapshot(built.snapshot); } catch (_) { return stop("DB_ERROR"); }
   run.result = "SUCCESS";
+  if (run.note) { run.reason = run.note.code; run.at = { query: run.note.query, col: run.note.col }; }
   run.bytes = built.bytes;
   return finish(200, { version: built.snapshot.version });
 }

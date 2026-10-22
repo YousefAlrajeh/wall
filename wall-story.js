@@ -11,7 +11,6 @@
   "use strict";
   var TZ_MIN = 180;            /* Riyadh, UTC+3 all year */
   var APPLY_LAG_MS = 120000;   /* a new snapshot is shown at fetched_at + 2 min on every screen at once (screens poll every 60 s) */
-  var AMBER = "#F0A04A", FONT = "'Segoe UI', sans-serif";
 
   function pad(n) { return (n < 10 ? "0" : "") + n; }
   function hhmm(ms) { var d = new Date(ms + TZ_MIN * 60000); return pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes()); }
@@ -98,9 +97,6 @@
     var cv = el(doc, "canvas", { position: "absolute", left: "0", top: "0", width: L.SCREEN_W + "px", height: L.SCREEN_H + "px" });
     cv.width = L.SCREEN_W; cv.height = L.SCREEN_H; cv.className = "ws-canvas";
     rootEl.appendChild(cv);
-    var note = el(doc, "div", { position: "absolute", left: (L.safePx || 48) + "px", bottom: (L.safePx || 48) + "px", fontFamily: FONT, fontSize: "40px", color: AMBER, display: "none" }, "");
-    note.className = "ws-note";
-    rootEl.appendChild(note);
     var g = cv.getContext ? cv.getContext("2d") : null;
 
     var shown = { version: -1, pending: null }, view = { stale: false, nodata: ctx.mode !== "blank" };
@@ -125,10 +121,10 @@
       }
       view.stale = !!(st && st.stale);
       view.nodata = ctx.mode === "blank" ? false : !(snap && st.hasData);
-      var msg = "";
-      if (ctx.mode !== "blank") { if (st.denied) msg = "This screen is not set up for figures yet"; else if (!snap || !st.hasData) msg = "No figures received yet"; }
-      if (note.textContent !== msg) { note.textContent = msg; note.style.display = msg ? "block" : "none"; }
-      info.state = msg ? "nodata" : (view.stale ? "stale" : "showing");
+      /* no snapshot, or the feed refused this screen: the design's own no-data state ("No data for these dates" in the normal
+         text colour on every panel); no extra notice, and amber only for stale data (D-243, checker_port F1). The console's
+         screen list says which screens are not set up. */
+      info.state = view.nodata ? (st.denied ? "denied" : "nodata") : (view.stale ? "stale" : "showing");
     }
 
     function frame() {
@@ -151,7 +147,7 @@
     if (ctx.manual) frame(); else rafH = raf(frame);
     var view0 = {
       info: function () { return { frames: info.frames, msMean: info.frames ? info.msSum / info.frames : 0, msMax: info.msMax, msLast: info.last, applied: info.applied,
-        version: info.version, builds: info.builds, appliedAt: info.appliedAt, state: info.state, note: note.textContent, err: info.err || null, tilesSkipped: 0 }; },
+        version: info.version, builds: info.builds, appliedAt: info.appliedAt, state: info.state, err: info.err || null, tilesSkipped: 0 }; },
       refresh: check,
       frame: frame,
       destroy: function () {

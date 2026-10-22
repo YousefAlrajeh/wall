@@ -111,7 +111,7 @@ window.Story5eBuild = function (DATA) {
     S.glass(g, x0, y0, w, h, COL[d], 0.15, k);
     T(g, (i + 1) + ". " + name, x0 + 60, y0 + h * 0.36, 56, { w: 600, al: k, maxW: 780, where: "step" });
     if (has0) T(g, mn(v) + " min", x0 + 60, y0 + h * 0.78, 84, { w: 700, c: "#FFFFFF", al: k, where: "step", key: key });
-    else T(g, C.nodata ? S.NODATA_TXT : "No data yet", x0 + 60, y0 + h * 0.76, 50, { c: INK2, al: k, maxW: 760, where: "step" });
+    else T(g, S.NODATA_TXT, x0 + 60, y0 + h * 0.76, 50, { c: INK2, al: k, maxW: 760, where: "step" });
     var bx = x0 + 880, bw = w - 940, by = mid - 24, f = has0 ? clamp(v / mx, 0, 1) : 0, tx = bx + bw * (has(tgt) ? clamp(tgt / mx, 0, 1) : 0.5);
     g.globalAlpha = k; S.rrect(g, bx, by, bw, 40, 10); g.fillStyle = "rgba(255,255,255,0.10)"; g.fill();
     g.fillStyle = hexA(COL[d], 0.14); g.fillRect(bx, by, tx - bx, 40);
@@ -152,7 +152,6 @@ window.Story5eBuild = function (DATA) {
         stroke(g, visited ? LIGHT.ecc : COL.ecc, 6, (visited ? 1 : 0.6) * k); g.beginPath(); g.arc(p[0], p[1], 64, 0, 6.2832); g.stroke();
         T(g, String(i + 1), p[0], p[1] + 22, 60, { w: 600, a: "center", c: "#FFFFFF", al: k, where: "stn" });
         T(g, L.ecc_steps[i], p[0], p[1] + 160, 50, { w: 600, a: "center", al: k, maxW: 520, min: 38, where: "stn" });
-        T(g, "Target " + ((TE.step_min || [])[i] !== undefined ? TE.step_min[i] : "--") + " min", p[0], p[1] + 230, 42, { a: "center", c: INK2, al: k, where: "stn" });
       });
       if (tt > 0 && tt < 1) { var hp = S.along(legs[li], ease(lf)); g.globalCompositeOperation = "lighter"; glow(g, COL.ecc, hp[0], hp[1], 110 + 30 * b, k); glow(g, "#FFFFFF", hp[0], hp[1], 44, k); g.globalCompositeOperation = "source-over"; }
     }

@@ -73,6 +73,8 @@ export function checkAllowList(queries) {
         if (!(s.max >= 1 && s.max <= LIMITS.TEXT_CHARS)) return fail("ALLOWLIST_BAD", { query: qi, col: ci });
         try { new RegExp(s.type === "text" ? s.pattern : s.part, "u"); } catch (_) { return fail("ALLOWLIST_BAD", { query: qi, col: ci }); }
         if (s.type === "list" && !(typeof s.sep === "string" && s.sep.length && s.maxParts >= 1 && s.maxParts <= 10)) return fail("ALLOWLIST_BAD", { query: qi, col: ci });
+        // a pinned label: the fixed text itself must pass its own checks
+        if (s.pinned !== undefined && !(s.type === "text" && typeof s.pinned === "string" && s.pinned.length >= 1 && s.pinned.length <= s.max && new RegExp(s.pattern, "u").test(s.pinned) && textGuard(s.pinned))) return fail("ALLOWLIST_BAD", { query: qi, col: ci });
       }
     }
     if (!keys.some((k) => q.allow[k].store !== false)) return fail("ALLOWLIST_BAD", { query: qi });
@@ -100,8 +102,12 @@ function validDate(v) {
 const SPACED_PHONE_RE = /\d(?:[\s.\-]?\d){6,}/;
 function textGuard(v) { return !/\d{7,}/.test(v) && !SPACED_PHONE_RE.test(v) && !v.includes("@") && !/[\r\n\t]/.test(v); }
 
-// one value -> [errorCode|null, storedValue]
+// one value -> [errorCode|null, storedValue, noteCode?]
+// A pinned text (allow-list v2, labels) is a fixed text: screens always get the pinned text; when the model's text differs,
+// the value is replaced by the pinned text and the note LABEL_PINNED is raised (the run row gets the code and the position,
+// never the text).
 function checkValue(s, v) {
+  if (s.pinned !== undefined) return v === s.pinned ? [null, s.pinned] : [null, s.pinned, "LABEL_PINNED"];
   if (s.type === "num") {
     if (v === null || v === undefined) return s.nullable ? [null, null] : ["NULL_VALUE"];
     if (typeof v !== "number" || !isFinite(v)) return ["NOT_A_NUMBER"];
@@ -145,12 +151,12 @@ export function validateQueryResult(q, qi, rawText, ctx) {
   const rows = res.tables[0] && res.tables[0].rows;
   if (!Array.isArray(rows)) return fail("RESP_SHAPE", { query: qi });
   if (q.table ? rows.length > q.table.maxRows : rows.length !== 1) return fail("ROW_COUNT", { query: qi, rows: rows.length });
-  const out = [];
+  const out = [], notes = [];
   let dropped = 0;
   for (let ri = 0; ri < rows.length; ri++) {
     const v = checkRow(q, qi, q.table ? ri : undefined, rows[ri], ctx);
     if (!v.ok) return v;
-    out.push(v.figures); dropped += v.dropped;
+    out.push(v.figures); dropped += v.dropped; notes.push(...v.notes);
   }
   if (q.table) {
     // tableCounts: counts the query gives on every row (FTM Overview's own, e.g. projects and cities today) must be the same on
@@ -164,9 +170,9 @@ export function validateQueryResult(q, qi, rawText, ctx) {
         if (out.some((x) => x[key] !== out[0][key] || x[key] > out.length) || (out.length && ki === 0 && !(out[0][key] >= 1))) return fail("TABLE_COUNTS", { query: qi, rule: k });
       }
     }
-    return { ok: true, figures: { rows: out }, dropped, rows: out.length };
+    return { ok: true, figures: { rows: out }, dropped, rows: out.length, notes };
   }
-  return { ok: true, figures: out[0], dropped };
+  return { ok: true, figures: out[0], dropped, notes };
 }
 
 // one answer row: exact known columns, each allowed column checked, the cross-column rules, then only "store" columns kept
@@ -184,13 +190,14 @@ function checkRow(q, qi, ri, row, ctx) {
     }
     byKey[k] = row[got[ci]];
   }
-  const figures = {};
+  const figures = {}, notes = [];
   const keys = Object.keys(q.allow);
   for (let ci = 0; ci < keys.length; ci++) {
     const k = keys[ci];
     if (!Object.prototype.hasOwnProperty.call(byKey, k)) return fail("MISSING_COLUMN", at({ col: ci }));
-    const [why, val] = checkValue(q.allow[k], byKey[k]);
+    const [why, val, note] = checkValue(q.allow[k], byKey[k]);
     if (why) return fail(why, at({ col: ci, len: typeof byKey[k] === "string" ? byKey[k].length : undefined }));
+    if (note) notes.push(Object.assign({ code: note }, at({ col: ci })));
     figures[k] = val;
   }
   // dates: d_today = the UTC date when the query ran; the windows follow from it
@@ -209,7 +216,7 @@ function checkRow(q, qi, ri, row, ctx) {
   }
   const kept = {};
   for (const k of keys) if (q.allow[k].store !== false) kept[k] = figures[k];
-  return { ok: true, figures: kept, dropped: got.length - Object.keys(kept).length };
+  return { ok: true, figures: kept, dropped: got.length - Object.keys(kept).length, notes };
 }
 
 // the allow-list v2 cross-column rules; returns a reason code or null

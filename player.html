@@ -512,7 +512,10 @@ function identifyFlash(){ const d=document.getElementById("identify");
   subscribe();
   tick();
   setInterval(tick,1000);
-  screenCheck(); /* background: never delays or blanks the wall unless the server clearly refuses the key */
+  /* both switches off (canvasPages, deviceChecks): exactly today's network traffic (old GET token form, no background key check);
+     either on: the new token form and the background key check (security rollout, paused D-237: deviceChecks goes on before its step 8) */
+  if(SETTINGS.canvasPages===true||SETTINGS.deviceChecks===true) screenCheck(); /* background: never delays or blanks the wall unless the server clearly refuses the key */
+  else LEGACY_FN=true;
   setInterval(()=>{ const b=document.getElementById("bootWhy");
     if(b&&WHY) b.textContent="Waiting: "+WHY; },1500);
   /* safety net: realtime is the primary channel; this backup poll runs every 5 MINUTES

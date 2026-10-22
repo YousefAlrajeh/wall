@@ -8,6 +8,9 @@
 //   src/wall21/proof180/columns_180.txt  ace29e7eb95448656b853394d603e21a6e8aac508ea18cdc48096a143990adf4
 //   src/wall21/allow2/wall_fm_events_v3.dax  93cfb72ec13e86fb0d2444be1348a3beb5f46b4c4827ddd2443c7bd83d3b3df8
 //   work/WS-wall21/handoff/allowlist_v2_1.txt  0f4084c6385333887a67608f3dbb7f9d4b1434af1455cdc542ff3d3d455b65b5
+//   exports/wall_179_20261022_132510/wall_ecc_oneday_v1_result.json  6e8b21318b6c31d33f990f5f414c1eefebceb9781f6e4dc6d16662d8849b07e1
+//   exports/wall_179_20261022_132510/wall_mt_oneday_v1_result.json  81d8a5632b26b75d6c6b9ec9535a7ca493ca1f274646fbb42972388c0405588e
+//   exports/wall_180_20261022_142517/wall_mt_units_v1_result.json  78068268a3d193b7a7d0df29753372ec7852a1c4154f26658d345561d095b961
 //   apps/wall/supabase/functions/wall-figures-pull/queries.mjs  a90d523f601b629c50d2e625987e1ca09e501dd0a00c06745de0c340e9e74ee5
 // known: every column the query returns; any other column rejects the whole snapshot. allow: the checked columns;
 // store:false = checked, then dropped. rules: cross-column checks (snapshot.mjs). table: one row per item (events).
@@ -1223,67 +1226,78 @@ export const QUERIES = [
     "type": "text",
     "max": 80,
     "pattern": "^[\\p{L}\\p{N} ,:/()+.&'%-]+$",
-    "emptyIsBlank": true
+    "emptyIsBlank": true,
+    "pinned": "Calls answered"
    },
    "ecc_service_pct_label": {
     "type": "text",
     "max": 80,
     "pattern": "^[\\p{L}\\p{N} ,:/()+.&'%-]+$",
-    "emptyIsBlank": true
+    "emptyIsBlank": true,
+    "pinned": "Calls answered in time"
    },
    "ecc_abandon_pct_label": {
     "type": "text",
     "max": 80,
     "pattern": "^[\\p{L}\\p{N} ,:/()+.&'%-]+$",
-    "emptyIsBlank": true
+    "emptyIsBlank": true,
+    "pinned": "Calls abandoned"
    },
    "ecc_dispatch_in_time_pct_label": {
     "type": "text",
     "max": 80,
     "pattern": "^[\\p{L}\\p{N} ,:/()+.&'%-]+$",
-    "emptyIsBlank": true
+    "emptyIsBlank": true,
+    "pinned": "Cases dispatched in time"
    },
    "ecc_step01_label": {
     "type": "text",
     "max": 80,
     "pattern": "^[\\p{L}\\p{N} ,:/()+.&'%-]+$",
-    "emptyIsBlank": true
+    "emptyIsBlank": true,
+    "pinned": "Call Processing"
    },
    "ecc_step02_label": {
     "type": "text",
     "max": 80,
     "pattern": "^[\\p{L}\\p{N} ,:/()+.&'%-]+$",
-    "emptyIsBlank": true
+    "emptyIsBlank": true,
+    "pinned": "Dispatch Activation"
    },
    "ecc_step03_label": {
     "type": "text",
     "max": 80,
     "pattern": "^[\\p{L}\\p{N} ,:/()+.&'%-]+$",
-    "emptyIsBlank": true
+    "emptyIsBlank": true,
+    "pinned": "Dispatch Processing"
    },
    "ecc_step04_label": {
     "type": "text",
     "max": 80,
     "pattern": "^[\\p{L}\\p{N} ,:/()+.&'%-]+$",
-    "emptyIsBlank": true
+    "emptyIsBlank": true,
+    "pinned": "Bed Availability"
    },
    "ecc_step05_label": {
     "type": "text",
     "max": 80,
     "pattern": "^[\\p{L}\\p{N} ,:/()+.&'%-]+$",
-    "emptyIsBlank": true
+    "emptyIsBlank": true,
+    "pinned": "Medical Endorsement"
    },
    "ecc_step06_label": {
     "type": "text",
     "max": 80,
     "pattern": "^[\\p{L}\\p{N} ,:/()+.&'%-]+$",
-    "emptyIsBlank": true
+    "emptyIsBlank": true,
+    "pinned": "Insurance Approval"
    },
    "ecc_step07_label": {
     "type": "text",
     "max": 80,
     "pattern": "^[\\p{L}\\p{N} ,:/()+.&'%-]+$",
-    "emptyIsBlank": true
+    "emptyIsBlank": true,
+    "pinned": "Dispatch Time"
    }
   },
   "rules": [
@@ -1838,67 +1852,78 @@ export const QUERIES = [
     "type": "text",
     "max": 80,
     "pattern": "^[\\p{L}\\p{N} ,:/()+.&'%-]+$",
-    "emptyIsBlank": true
+    "emptyIsBlank": true,
+    "pinned": "Chute"
    },
    "mt_step02_label": {
     "type": "text",
     "max": 80,
     "pattern": "^[\\p{L}\\p{N} ,:/()+.&'%-]+$",
-    "emptyIsBlank": true
+    "emptyIsBlank": true,
+    "pinned": "En route"
    },
    "mt_step03_label": {
     "type": "text",
     "max": 80,
     "pattern": "^[\\p{L}\\p{N} ,:/()+.&'%-]+$",
-    "emptyIsBlank": true
+    "emptyIsBlank": true,
+    "pinned": "Response"
    },
    "mt_step04_label": {
     "type": "text",
     "max": 80,
     "pattern": "^[\\p{L}\\p{N} ,:/()+.&'%-]+$",
-    "emptyIsBlank": true
+    "emptyIsBlank": true,
+    "pinned": "On scene"
    },
    "mt_step05_label": {
     "type": "text",
     "max": 80,
     "pattern": "^[\\p{L}\\p{N} ,:/()+.&'%-]+$",
-    "emptyIsBlank": true
+    "emptyIsBlank": true,
+    "pinned": "Patient on scene"
    },
    "mt_step06_label": {
     "type": "text",
     "max": 80,
     "pattern": "^[\\p{L}\\p{N} ,:/()+.&'%-]+$",
-    "emptyIsBlank": true
+    "emptyIsBlank": true,
+    "pinned": "Transfer preparation"
    },
    "mt_step07_label": {
     "type": "text",
     "max": 80,
     "pattern": "^[\\p{L}\\p{N} ,:/()+.&'%-]+$",
-    "emptyIsBlank": true
+    "emptyIsBlank": true,
+    "pinned": "Transport"
    },
    "mt_step08_label": {
     "type": "text",
     "max": 80,
     "pattern": "^[\\p{L}\\p{N} ,:/()+.&'%-]+$",
-    "emptyIsBlank": true
+    "emptyIsBlank": true,
+    "pinned": "Transfer of care"
    },
    "mt_step09_label": {
     "type": "text",
     "max": 80,
     "pattern": "^[\\p{L}\\p{N} ,:/()+.&'%-]+$",
-    "emptyIsBlank": true
+    "emptyIsBlank": true,
+    "pinned": "Turnaround"
    },
    "mt_step10_label": {
     "type": "text",
     "max": 80,
     "pattern": "^[\\p{L}\\p{N} ,:/()+.&'%-]+$",
-    "emptyIsBlank": true
+    "emptyIsBlank": true,
+    "pinned": "Back to station"
    },
    "mt_step11_label": {
     "type": "text",
     "max": 80,
     "pattern": "^[\\p{L}\\p{N} ,:/()+.&'%-]+$",
-    "emptyIsBlank": true
+    "emptyIsBlank": true,
+    "pinned": "Back in service"
    }
   },
   "rules": [
@@ -2058,7 +2083,8 @@ export const QUERIES = [
     "type": "text",
     "max": 80,
     "pattern": "^[\\p{L}\\p{N} ,:/()+.&'%-]+$",
-    "emptyIsBlank": true
+    "emptyIsBlank": true,
+    "pinned": "Units logged in a day"
    }
   },
   "rules": [
@@ -2081,7 +2107,7 @@ export const QUERIES = [
  {
   "id": "wall-fm-events-v3",
   "page": "fmevents",
-  "proof": "pending",
+  "proof": "WallEventsProof_181_20261022_164930",
   "sha256": "93cfb72ec13e86fb0d2444be1348a3beb5f46b4c4827ddd2443c7bd83d3b3df8",
   "dax": "// WS-wall21 allow-list v2.1: events running today, one row per event, for the wall (Field Medicine). Read-only. NOT YET RUN.\n// Event rules as read 177's events query (same as [FTM Ach Volumes]): cancelled events left out; running today = started on\n// or before today and not ended before today. City spellings merged as 177 (blank -> \"No city\").\n// D-238: an event whose event name or project name contains, as whole words, a value of any of the 45 personal-name\n// columns of read 177's rule (both sides normalised as 177: lower case; ; , ( ) | / : to spaces; spaces collapsed; values of\n// 3-60 characters; placeholders and values without a letter left out) returns BOTH names blank and withheld = 1.\n// A name value that is also a facility key or label ('Branch Coordinates'), a city (the 14 wall cities and merged spellings,\n// event, operations and branch cities), a zone (end-of-shift zones, event zones) or Other is NOT a name (read 178's classes\n// facility, place, other; D-235): only unexplained matches withhold. The names are compared inside the engine; no name value\n// is in this query or leaves the engine. D-241: one row per event; a withheld event still counts everywhere.\n// projects_today / cities_today: FTM Overview's own counts ([FTM Ach Volumes] ev_proj, ev_city; dates = today), on every row, so the wall\n// counts projects and cities exactly as FTM Overview (blank project = one (no project); blank city not counted; no merge).\nEVALUATE\nVAR _T = TODAY ()\nVAR _E =\n    FILTER ( CALCULATETABLE ( Dim_Event, REMOVEFILTERS ( Dim_Date ), REMOVEFILTERS ( 'Date' ) ),\n        NOT ( SEARCH ( \"cancel\", Dim_Event[Operational Status] & \"\", 1, 0 ) > 0 || SEARCH ( \"cancel\", Dim_Event[Event Status] & \"\", 1, 0 ) > 0 )\n        && NOT ISBLANK ( Dim_Event[Start Date] ) )\nVAR _Now = FILTER ( _E, Dim_Event[Start Date] <= _T && ( ISBLANK ( Dim_Event[End Date] ) || Dim_Event[End Date] >= _T ) )\nVAR _Nxt = FILTER ( _E, Dim_Event[Start Date] > _T && Dim_Event[Start Date] <= _T + 30 )\nVAR _RV =\n    UNION (\n        SELECTCOLUMNS ( DISTINCT ( 'Branch Coordinates'[BranchKey] ), \"r\", 'Branch Coordinates'[BranchKey] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Branch Coordinates'[Branch Name] ), \"r\", 'Branch Coordinates'[Branch Name] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Branch Coordinates'[City] ), \"r\", 'Branch Coordinates'[City] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( Dim_Event[City] ), \"r\", Dim_Event[City] & \"\" ),\n        SELECTCOLUMNS ( FILTER ( ALL ( Fact_Operations[Report Type], Fact_Operations[City] ), Fact_Operations[Report Type] = \"Post Event\" ), \"r\", Fact_Operations[City] & \"\" ),\n        SELECTCOLUMNS ( FILTER ( ALL ( Fact_Operations[Report Type], Fact_Operations[Zone] ), Fact_Operations[Report Type] = \"Post Event\" ), \"r\", Fact_Operations[Zone] & \"\" ),\n        SELECTCOLUMNS ( FILTER ( UNION ( _Now, _Nxt ), TRIM ( Dim_Event[Event Zone] & \"\" ) <> TRIM ( Dim_Event[Event Name] & \"\" ) ), \"r\", Dim_Event[Event Zone] & \"\" ),\n        { \"riyadh\", \"jeddah\", \"khobar\", \"dammam\", \"al ahsa\", \"al qatif\", \"abha\", \"hail\", \"al qassim\", \"makkah\", \"taif\", \"rabigh\", \"madinah\", \"jubail\", \"mekkah\", \"rhabig\", \"buraidah\" }\n    )\nVAR _RN = DISTINCT ( SELECTCOLUMNS ( _RV, \"rn\", TRIM ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( LOWER ( [r] ), \";\", \" \" ), \",\", \" \" ), \"(\", \" \" ), \")\", \" \" ), \"|\", \" \" ), \"/\", \" \" ), \":\", \" \" ) ) ) )\nVAR _PK = DISTINCT ( SELECTCOLUMNS ( _Now, \"zp\", VAR v = TRIM ( Dim_Event[Event Name] & \"\" ) RETURN IF ( v = \"\", \"(no project)\", v ) ) )\nVAR _CK = FILTER ( DISTINCT ( SELECTCOLUMNS ( _Now, \"zc\", LOWER ( TRIM ( Dim_Event[City] & \"\" ) ) ) ), [zc] <> \"\" )\nVAR _NV =\n    UNION (\n        SELECTCOLUMNS ( DISTINCT ( 'EMS Command Center Timestamps - Updated'[Call Taker Name] ), \"v\", 'EMS Command Center Timestamps - Updated'[Call Taker Name] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'EMS Command Center Timestamps - Updated'[Patient Transfer (RRT)] ), \"v\", 'EMS Command Center Timestamps - Updated'[Patient Transfer (RRT)] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'EMS Command Center Timestamps - Updated'[Response Coordinator Name] ), \"v\", 'EMS Command Center Timestamps - Updated'[Response Coordinator Name] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'EMS Command Center Timestamps - Updated'[Doctor Name] ), \"v\", 'EMS Command Center Timestamps - Updated'[Doctor Name] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'EMS Command Center Timestamps - Updated'[Patient Contact Time] ), \"v\", 'EMS Command Center Timestamps - Updated'[Patient Contact Time] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Patient'[Patient name] ), \"v\", 'Patient'[Patient name] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'StaffLocation'[Name] ), \"v\", 'StaffLocation'[Name] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Paramedic Cases'[Call Taker Name] ), \"v\", 'Paramedic Cases'[Call Taker Name] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Paramedic Cases'[Patient Transfer (RRT)] ), \"v\", 'Paramedic Cases'[Patient Transfer (RRT)] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Paramedic Cases'[Response Coordinator Name] ), \"v\", 'Paramedic Cases'[Response Coordinator Name] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Paramedic Cases'[Paramedic Name] ), \"v\", 'Paramedic Cases'[Paramedic Name] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Paramedic Cases'[Doctor Name] ), \"v\", 'Paramedic Cases'[Doctor Name] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Paramedic Cases'[Patient Contact Time] ), \"v\", 'Paramedic Cases'[Patient Contact Time] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Branches'[Full Name] ), \"v\", 'Branches'[Full Name] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Daily Staff Performance'[StaffName] ), \"v\", 'Daily Staff Performance'[StaffName] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Daily Supervisors Performance'[StaffName] ), \"v\", 'Daily Supervisors Performance'[StaffName] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'StaffList'[StaffName] ), \"v\", 'StaffList'[StaffName] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Daily Unit Login'[1st Crew Member] ), \"v\", 'Daily Unit Login'[1st Crew Member] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Daily Unit Login'[1st Crew Member ID] ), \"v\", 'Daily Unit Login'[1st Crew Member ID] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Daily Unit Login'[2nd Crew Member] ), \"v\", 'Daily Unit Login'[2nd Crew Member] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Daily Unit Login'[2nd Crew Member ID] ), \"v\", 'Daily Unit Login'[2nd Crew Member ID] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Daily Unit Login'[3rd Crew Member] ), \"v\", 'Daily Unit Login'[3rd Crew Member] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Daily Unit Login'[3rd Crew Member ID] ), \"v\", 'Daily Unit Login'[3rd Crew Member ID] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Ambulance Checklist'[Submitted By] ), \"v\", 'Ambulance Checklist'[Submitted By] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Ambulance Checklist'[Outgoing Medic ID] ), \"v\", 'Ambulance Checklist'[Outgoing Medic ID] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Ambulance Checklist'[Incoming Medic ID] ), \"v\", 'Ambulance Checklist'[Incoming Medic ID] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Ambulance Checklist'[Vehicle & Mechanical Readiness - Driver A/C functi] ), \"v\", 'Ambulance Checklist'[Vehicle & Mechanical Readiness - Driver A/C functi] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Crew IDs'[Crew ID] ), \"v\", 'Crew IDs'[Crew ID] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Dim_Event'[Project Manager] ), \"v\", 'Dim_Event'[Project Manager] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Dim_Event'[IsDuplicateName] ), \"v\", 'Dim_Event'[IsDuplicateName] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Fact_Operations'[Zone Manager Name] ), \"v\", 'Fact_Operations'[Zone Manager Name] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Fact_Operations'[Patient Signed DAMA] ), \"v\", 'Fact_Operations'[Patient Signed DAMA] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Fact_Operations'[Number of Doctors] ), \"v\", 'Fact_Operations'[Number of Doctors] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Fact_Operations'[Number of Paramedics] ), \"v\", 'Fact_Operations'[Number of Paramedics] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Fact_Operations'[Number of Nurses] ), \"v\", 'Fact_Operations'[Number of Nurses] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Fact_Transfers'[Zone Manager / Dispatcher Name] ), \"v\", 'Fact_Transfers'[Zone Manager / Dispatcher Name] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Fact_Transfers'[Arrival To Patient] ), \"v\", 'Fact_Transfers'[Arrival To Patient] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Ambulance Checklist - 1'[Submitted By] ), \"v\", 'Ambulance Checklist - 1'[Submitted By] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Ambulance Checklist - 1'[Outgoing Medic ID] ), \"v\", 'Ambulance Checklist - 1'[Outgoing Medic ID] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Ambulance Checklist - 1'[Incoming Medic ID] ), \"v\", 'Ambulance Checklist - 1'[Incoming Medic ID] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Ambulance Checklist - 1'[Vehicle & Mechanical Readiness - Driver A/C functi] ), \"v\", 'Ambulance Checklist - 1'[Vehicle & Mechanical Readiness - Driver A/C functi] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Ambulance Checklist 2026'[Submitted By] ), \"v\", 'Ambulance Checklist 2026'[Submitted By] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Ambulance Checklist 2026'[Outgoing Medic ID] ), \"v\", 'Ambulance Checklist 2026'[Outgoing Medic ID] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Ambulance Checklist 2026'[Incoming Medic ID] ), \"v\", 'Ambulance Checklist 2026'[Incoming Medic ID] & \"\" ),\n        SELECTCOLUMNS ( DISTINCT ( 'Ambulance Checklist 2026'[Vehicle & Mechanical Readiness - Driver A/C functi] ), \"v\", 'Ambulance Checklist 2026'[Vehicle & Mechanical Readiness - Driver A/C functi] & \"\" )\n    )\nVAR _NW =\n    FILTER ( DISTINCT ( SELECTCOLUMNS ( _NV, \"w\", TRIM ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( LOWER ( [v] ), \";\", \" \" ), \",\", \" \" ), \"(\", \" \" ), \")\", \" \" ), \"|\", \" \" ), \"/\", \" \" ), \":\", \" \" ) ) ) ),\n        LEN ( [w] ) >= 3 && LEN ( [w] ) <= 60\n        && NOT ( [w] IN { \"n a\", \"none\", \"null\", \"tbd\", \"unknown\", \"nil\", \"test\", \"yes\", \"---\" } )\n        && LEN ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( [w], \"0\", \"\" ), \"1\", \"\" ), \"2\", \"\" ), \"3\", \"\" ), \"4\", \"\" ), \"5\", \"\" ), \"6\", \"\" ), \"7\", \"\" ), \"8\", \"\" ), \"9\", \"\" ), \" \", \"\" ), \"-\", \"\" ), \".\", \"\" ), \"+\", \"\" ) ) > 0\n        && NOT ( [w] IN _RN ) && [w] <> \"other\" && LEFT ( [w], 6 ) <> \"other \" )\nVAR _R =\n    ADDCOLUMNS (\n        SELECTCOLUMNS ( _Now, \"c0\", TRIM ( Dim_Event[City] & \"\" ), \"zn\", TRIM ( Dim_Event[Event Zone] & \"\" ), \"pn\", TRIM ( Dim_Event[Event Name] & \"\" ), \"sd\", Dim_Event[Start Date], \"ed\", Dim_Event[End Date] ),\n        \"zx\", \" \" & TRIM ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( LOWER ( [zn] ), \";\", \" \" ), \",\", \" \" ), \"(\", \" \" ), \")\", \" \" ), \"|\", \" \" ), \"/\", \" \" ), \":\", \" \" ) ) & \" \",\n        \"px\", \" \" & TRIM ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( SUBSTITUTE ( LOWER ( [pn] ), \";\", \" \" ), \",\", \" \" ), \"(\", \" \" ), \")\", \" \" ), \"|\", \" \" ), \"/\", \" \" ), \":\", \" \" ) ) & \" \"\n    )\nVAR _F =\n    ADDCOLUMNS ( _R, \"hold\", VAR zA = [zx] VAR zB = [px] RETURN IF ( ISEMPTY ( FILTER ( _NW, FIND ( \" \" & [w] & \" \", zA, 1, 0 ) > 0 || FIND ( \" \" & [w] & \" \", zB, 1, 0 ) > 0 ) ), 0, 1 ) )\nRETURN\nSELECTCOLUMNS ( _F,\n    \"d_today\", FORMAT ( _T, \"yyyy-mm-dd\", \"en-US\" ),\n    \"city\", VAR zcm = LOWER ( [c0] ) RETURN SWITCH ( TRUE (), zcm = \"\", \"No city\", zcm = \"mekkah\", \"Makkah\", zcm = \"makkah\", \"Makkah\", zcm = \"rhabig\", \"Rabigh\", zcm = \"rabigh\", \"Rabigh\", LEFT ( [c0], 30 ) ),\n    \"zone\", IF ( [hold] = 1, \"\", LEFT ( IF ( [zn] = [pn], \"\", [zn] ), 60 ) ),\n    \"project\", IF ( [hold] = 1, \"\", LEFT ( [pn], 60 ) ),\n    \"start_day\", FORMAT ( [sd], \"yyyy-mm-dd\", \"en-US\" ),\n    \"end_day\", IF ( ISBLANK ( [ed] ), \"\", FORMAT ( [ed], \"yyyy-mm-dd\", \"en-US\" ) ),\n    \"withheld\", [hold],\n    \"projects_today\", COUNTROWS ( _PK ) + 0,\n    \"cities_today\", COUNTROWS ( _CK ) + 0\n)\nORDER BY [start_day] ASC, [city] ASC, [project] ASC, [zone] ASC\n",
   "known": [

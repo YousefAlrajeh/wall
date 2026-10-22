@@ -385,7 +385,7 @@
     T(g, p.head, x0 + 120, y0 + 262, 70, { w: 600, maxW: k === "over" ? 1180 : 1680, where: "kpi" });
     /* honesty without colour: a missed Target is said in words, at full weight, in the department colour */
     if (k === "over") T(g, p.lower ? "Above Target" : "Below Target", x0 + 1800, y0 + 262, 64, { w: 700, a: "right", c: COL[d], where: "kpi" });
-    if (k === "none") T(g, C.nodata ? NODATA_TXT : "No data yet", x0 + 120, y0 + 470, 76, { w: 600, c: INK2, maxW: ring ? 1050 : 1680, where: "kpi" });
+    if (k === "none") T(g, NODATA_TXT, x0 + 120, y0 + 470, 76, { w: 600, c: INK2, maxW: ring ? 1050 : 1680, where: "kpi" });
     else { var r = T(g, countUp(p.txt, age), x0 + 110, y0 + 560, 250, { w: 700, c: "#FFFFFF", maxW: ring ? 1000 : 1500, min: 120, glow: col, where: "kpi", key: p.key });
       if (p.unit && r) T(g, p.unit, r.x + r.w + 26, y0 + 560, 96, { c: LIGHT[d], where: "kpi" }); }
     if (ring) {
@@ -425,8 +425,8 @@
       var by0 = y + Math.round(rh * 0.55);
       T(g, r.name, x0 + 120, by0, fs, { w: 600, maxW: 640, min: 36, where: "steps" });
       if (has0) T(g, (Math.round(r.v * 10) / 10) + " min", x0 + 760, by0, fs + 2, { w: 700, c: "#FFFFFF", where: "steps", key: r.key });
-      else T(g, C.nodata ? "No data" : "No data yet", x0 + 760, by0, 36, { c: INK2, maxW: 320, min: 36, where: "steps" });
-      if (r.tgt !== null && r.tgt !== undefined) T(g, (over ? "Above Target " : "Target ") + r.tgt + " min", x0 + 1040, by0, 36, { w: over ? 700 : 400, c: over ? COL[d] : INK2, maxW: 400, where: "steps" });
+      else T(g, NODATA_TXT, x0 + 760, by0, 36, { c: INK2, maxW: 410, min: 36, where: "steps" });
+      if (r.tgt !== null && r.tgt !== undefined) T(g, (over ? "Above Target " : "Target ") + r.tgt + " min", x0 + (has0 ? 1040 : 1190), by0, 36, { w: over ? 700 : 400, c: over ? COL[d] : INK2, maxW: has0 ? 400 : 270, where: "steps" });
       var bx = x0 + 1470, bw = 310, by = by0 - 22, f = has0 ? clamp(r.v / mx, 0, 1) : 0, tx = bx + bw * 0.5;
       rrect(g, bx, by, bw, 22, 8); g.fillStyle = "rgba(255,255,255,0.10)"; g.fill();
       g.fillStyle = hexA(COL[d], 0.14); g.fillRect(bx, by, tx - bx, 22);
