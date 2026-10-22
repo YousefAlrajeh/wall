@@ -18,10 +18,15 @@ export async function handle(req, { env, db }) {
     const at = await db.setMark("restart_check");
     return json(req, env, 200, { restart_check_at: at });
   }
+  if (b && b.action === "reload_mark") { // "Reload all screens" pressed now, by the SERVER's clock (checker_wallv2_r3 R3-L2)
+    const at = await db.setMark("reload_all");
+    return json(req, env, 200, { reload_at: at });
+  }
   if (b && b.action === "list") { // which screens are enrolled (never the hashes)
     const rows = await db.listDevices();
     const mark = await db.getMark("restart_check");
-    return json(req, env, 200, { restart_check_at: mark, devices: rows.map((r) => ({ screen: r.screen, enrolled_at: r.enrolled_at, revoked: !!r.revoked_at,
+    const reload = await db.getMark("reload_all");
+    return json(req, env, 200, { restart_check_at: mark, reload_at: reload, devices: rows.map((r) => ({ screen: r.screen, enrolled_at: r.enrolled_at, revoked: !!r.revoked_at,
       first_used_at: r.first_used_at || null, last_session_at: r.last_session_at || null, sessions: r.sessions | 0 })) });
   }
   if (!b || typeof b.screen !== "string" || !SCREEN_ID_RE.test(b.screen)) return json(req, env, 400, { error: "bad_request" });

@@ -314,8 +314,7 @@ window.doClear=async()=>{ if(!SEL.size)return alert("Click screens first.");
   const ts=new Date().toISOString();
   await sb.from("assignments").upsert([...SEL].map(s=>({screen:s,kind:"clear",content_id:null,updated_at:ts})));
   load(); };
-window.identify=async()=>{ const d=(ST.settings.data)||{}; d._identify=Date.now();
-  await sb.from("settings").update({data:d,updated_at:new Date().toISOString()}).eq("id","main"); };
+window.identify=async()=>{ try{ await settingsWrite({_identify:Date.now()}); }catch(e){ alert(e.message); } };
 
 /* ---------- content ---------- */
 async function storeFile(path,f){
@@ -446,11 +445,22 @@ window.presetDel=async n=>{ if(!confirm("Delete preset '"+n+"'?"))return;
 window.saveSettings=async()=>{
   if(dfOn.checked&&(!dfTable.value.trim()||!dfColumn.value.trim()))
     return alert("Date window needs the date Table and Column names from your report (see the guide note).");
-  const d=Object.assign({},ST.settings.data||{},{fit:setFit.value,bannerCropPx:+setCrop.value||0,prewarmEnabled:setPrewarm.checked,defaultTransition:setTx.value,defaultSpeed:setSp.value,
-    dateFilter:{enabled:dfOn.checked,count:Math.max(1,+dfCount.value||7),unit:dfUnit.value,table:dfTable.value.trim(),column:dfColumn.value.trim(),includeToday:true}});
-  delete d._identify;
-  await sb.from("settings").update({data:d,updated_at:new Date().toISOString()}).eq("id","main");
+  try{ await settingsWrite({fit:setFit.value,bannerCropPx:+setCrop.value||0,prewarmEnabled:setPrewarm.checked,defaultTransition:setTx.value,defaultSpeed:setSp.value,
+    dateFilter:{enabled:dfOn.checked,count:Math.max(1,+dfCount.value||7),unit:dfUnit.value,table:dfTable.value.trim(),column:dfColumn.value.trim(),includeToday:true}},["_identify"]); }
+  catch(e){ return alert(e.message); }
   load(); alert("Settings saved. Screens update automatically."); };
+/* every settings write starts from a FRESH read of the row, never from this page's copy (that copy is
+   refreshed only every 30 s, and not at all while the tab is hidden). So no button writes back an older
+   "Reload all screens" value or an older switch (checker_wallv2_r3 R3-L1). The current _reloadAt is kept
+   exactly as it is: the player reloads only on a newer value, so keeping it never reloads anything. */
+async function settingsWrite(patch,drop){
+  const cur=await sb.from("settings").select("data").eq("id","main").single();
+  if(cur.error||!cur.data) throw new Error("Could not read the settings");
+  const d=Object.assign({},cur.data.data||{},patch);
+  for(const k of (drop||[])) delete d[k];
+  const up=await sb.from("settings").update({data:d,updated_at:new Date().toISOString()}).eq("id","main");
+  if(up.error) throw new Error("Could not save the settings");
+  return d; }
 /* ---------- screen PC enrolment (brief step 2-A) ---------- */
 const ENROL_FN=String(C.SUPA_URL).replace(/\/$/,"")+"/functions/v1/wall-device-enroll";
 /* a screen counts as set up only when its PC has used its secret successfully in a page session after the
@@ -459,25 +469,32 @@ const ENROL_FN=String(C.SUPA_URL).replace(/\/$/,"")+"/functions/v1/wall-device-e
    screen PCs count (monitoring mirrors never record a session) */
 window.restartCheck=async()=>{ if(!confirm("Start the restart check now? Then restart the ECC room PC and the Sidebar, and press Refresh list."))return;
   try{ await adminPost(ENROL_FN,{action:"restart_check_start"}); }catch(e){ enNote.textContent=e.message; enNote.style.color="#F0A04A"; return; } enrolList(); };
-/* every new player reloads itself once (settings.data._reloadAt); used before the step 3 and step 8 checks */
+/* every new player reloads itself once (settings.data._reloadAt, always newer than the stored value); used before
+   the checks of rollout steps 4, 7 and 8. The press time is also recorded by the SERVER (once the enrol function is
+   deployed, step 4), and the list then shows which screens came back with their own link after the press (R3-L2). */
 window.reloadAll=async()=>{ if(!confirm("Reload every screen now? Each screen goes black for a few seconds and asks for fresh reports."))return;
-  const cur=await sb.from("settings").select("data").eq("id","main").single(); if(cur.error)return alert("Could not read the settings");
-  const d=Object.assign({},cur.data.data||{},{_reloadAt:Date.now()});
+  let at=0; try{ const m=await adminPost(ENROL_FN,{action:"reload_mark"}); at=Date.parse(m.reload_at)||0; }catch(e){ at=0; }
+  const cur=await sb.from("settings").select("data").eq("id","main").single(); if(cur.error||!cur.data)return alert("Could not read the settings");
+  const d=Object.assign({},cur.data.data||{},{_reloadAt:Math.max(at||Date.now(),(+(cur.data.data||{})._reloadAt||0)+1)});
   const up=await sb.from("settings").update({data:d,updated_at:new Date().toISOString()}).eq("id","main");
-  if(up.error) return alert("Could not send the reload"); alert("Reload sent. Screens reload within a few seconds."); };
+  if(up.error) return alert("Could not send the reload");
+  load(); enrolList(); alert("Reload sent. Screens reload within a few seconds (a screen that missed it reloads within 5 minutes)."); };
 window.enrolList=async()=>{ try{
   const j=await adminPost(ENROL_FN,{action:"list"}); const g=document.getElementById("enGrid"); g.textContent="";
-  const since=j.restart_check_at?Date.parse(j.restart_check_at):0; let used=0, back=0;
+  const since=j.restart_check_at?Date.parse(j.restart_check_at):0; let used=0, back=0, rel=0;
+  const relAt=j.reload_at?Date.parse(j.reload_at):0;
   for(const s2 of screens){ const d=(j.devices||[]).find(x=>x.screen===s2)||null;
     const made=d&&!d.revoked, usedOk=made&&d.last_session_at&&Date.parse(d.last_session_at)>=Date.parse(d.enrolled_at);
     const backOk=usedOk&&since&&Date.parse(d.last_session_at)>since; if(usedOk)used++; if(backOk)back++;
+    if(usedOk&&relAt&&Date.parse(d.last_session_at)>relAt) rel++;
     const c=document.createElement("div"); c.className="cell"; c.style.fontSize="14px";
     const b=document.createElement("b"); b.textContent=s2; c.appendChild(b);
     const t=document.createElement("div"); t.style.fontSize="14px";
     t.textContent=!made?"no link yet":(!usedOk?"link made, not used yet":(since?(backOk?"back after restart":"not back yet"):"working"));
     if(!usedOk||(since&&!backOk)) t.style.color="#F0A04A"; c.appendChild(t); g.appendChild(c); }
-  enNote.textContent=used+" of "+screens.length+" screen PCs working with their own link"+(since?"; "+back+" of "+screens.length+" came back after the restart check started at "+new Date(since).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"; not yet proven after a restart")+".";
-  enNote.style.color=(since?back:0)===screens.length?"":"#F0A04A";
+  enNote.textContent=used+" of "+screens.length+" screen PCs working with their own link"+(since?"; "+back+" of "+screens.length+" came back after the restart check started at "+new Date(since).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"; not yet proven after a restart")
+    +(relAt?"; "+rel+" of "+screens.length+" came back with their own link after Reload all screens at "+new Date(relAt).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"")+".";
+  enNote.style.color=((since?back:0)===screens.length&&(!relAt||rel===screens.length))?"":"#F0A04A";
 }catch(e){ enNote.textContent=e.message; enNote.style.color="#F0A04A"; } };
 window.enrolMake=async()=>{ const scr=enScr.value;
   if(!confirm("Make a new one-time link for "+scr+"? Its old link stops working."))return;
@@ -504,12 +521,10 @@ window.wsSave=async()=>{
   const order=wsOrder.value.trim()?wsOrder.value.split(",").map(x=>+x.trim()).filter(n=>n>0):null;
   const w={enabled:wsOn.checked,mode:wsMode.value,order,stepMs:Math.max(0,+wsStep.value||0),
            staggerMs:Math.max(0,+wsStag.value||0),reverseOrder:wsRevO.checked,reverseInGroup:wsRevG.checked};
-  const d=Object.assign({},ST.settings.data||{},{wallSeq:w});
-  await sb.from("settings").update({data:d,updated_at:new Date().toISOString()}).eq("id","main");
+  try{ await settingsWrite({wallSeq:w}); }catch(e){ return alert(e.message); }
   load(); alert(w.enabled?"Wall Sync ON — flips now sweep across the wall.":"Wall Sync OFF — screens flip together as before."); };
 window.forceSync=async()=>{
-  const d=Object.assign({},ST.settings.data||{},{_forceSync:Date.now()});
-  await sb.from("settings").update({data:d,updated_at:new Date().toISOString()}).eq("id","main");
+  try{ await settingsWrite({_forceSync:Date.now()}); }catch(e){ return alert(e.message); }
   alert("Force Sync sent — every screen recomputes its correct state from the shared clock."); };
 function wsDelayFor(scr,w){ return WallLayout.waveDelay(scr,w,"console"); } /* same arithmetic as before */
 function wsPaintMap(){ const w=wsCfg(); const g=document.getElementById("wsMap"); if(!g)return;
@@ -529,11 +544,22 @@ async function adminPost(url,body){ /* signed-in console admin only (brief step 
   const {data}=await sb.auth.getSession(); if(!data.session) throw new Error("Sign in to the console first");
   const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json",apikey:C.SUPA_KEY,Authorization:"Bearer "+data.session.access_token},body:JSON.stringify(body)});
   let j={}; try{ j=await r.json(); }catch(e){}
-  if(r.status===403) throw new Error(j.error==="wrong_account"?"That Microsoft account is not the expected one. Nothing was changed.":"This account is not a wall admin");
+  if(r.status===403){ const e=new Error(j.error==="wrong_account"?"That Microsoft account is not the expected one. Nothing was changed.":"This account is not a wall admin"); e.code=String(j.error||""); throw e; }
   if(!r.ok) throw new Error(j.error||("error "+r.status));
   return j; }
+/* Until the new token function is deployed (rollout step 4), the old one (v5) is live. It answers this console's
+   new request form with "bad key" before doing anything, so the Microsoft box then uses the old form, exactly as
+   main's console did. Microsoft can therefore be re-authorized at every step of the rollout (checker_wallv2_r3
+   R3-M2). The new function never answers "bad key" to these two actions, so with it live this never happens. */
+const oldFn=e=>!!e&&e.code==="bad key";
 async function msStatus(){ try{
-  const j=await adminPost(C.TOKEN_FN,{action:"status"});
+  let j;
+  try{ j=await adminPost(C.TOKEN_FN,{action:"status"}); }
+  catch(e){ if(!oldFn(e)) throw e;
+    const r=await fetch(C.TOKEN_FN+"?status=1&k="+C.SCREEN_KEY); const o=await r.json();
+    msStat.style.fontSize="14px";
+    msStat.textContent=o.authorized?"signed in (old token function: the account and origin checks start at rollout step 4)":(o.revoked?"sign in again needed":"not signed in yet");
+    msStat.style.color=o.authorized?"var(--green)":"#F0A04A"; return; }
   msStat.style.fontSize="14px";
   msStat.textContent=!j.authorized?(j.revoked?"sign in again needed":"not signed in yet")
     :("signed in; stored account matches expected: "+(j.accountMatches===true?"yes":(j.accountMatches===false?"no":"not set up"))
@@ -567,7 +593,11 @@ window.msAuth=async()=>{ /* normal browser sign-in (authorization code + PKCE) �
   try{
     const {data}=await sb.auth.getSession();
     if(!data.session){ alert("Sign in to the console first, then click Authorize Microsoft again."); return; }
-    const j=await adminPost(C.TOKEN_FN,{action:"redeem",code,verifier:v,ruri});
+    let j;
+    try{ j=await adminPost(C.TOKEN_FN,{action:"redeem",code,verifier:v,ruri}); }
+    catch(e){ if(!oldFn(e)) throw e; /* old function (before step 4): it refused before using the code, so main's form can still redeem it */
+      const r=await fetch(C.TOKEN_FN+"?redeem=1&k="+C.SCREEN_KEY+"&code="+encodeURIComponent(code)+"&verifier="+encodeURIComponent(v)+"&ruri="+encodeURIComponent(ruri));
+      j=await r.json(); if(!j.ok) throw new Error(j.error||"unknown"); }
     if(j.ok){ alert("Microsoft sign-in saved. The wall renews itself from here."); msStatus(); }
   }catch(e){ alert("Sign-in not saved: "+(e.message||e)+"\nClick Authorize Microsoft to try again."); }
 })();

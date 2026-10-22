@@ -49,17 +49,24 @@ const sb = createClient(C.SUPA_URL, C.SUPA_KEY);
 function safeStorage(){ try{ return window.localStorage; }catch(e){ return null; } }
 /* screen enrolment: the screen's link from the console carries #d=<this PC's own device secret> in the
    fragment (never sent to any server as part of the address). It is also kept in this PC's browser
-   storage, and removed from the address bar after reading. */
+   storage. It leaves the address bar only once the storage gives the same secret back; on a PC whose
+   browser storage is blocked it stays there, so every in-page reload (03:00, "Reload all screens", the
+   switch-off reload) still has it (checker_wallv2_r3 R3-M1). */
 const DEVICE=(()=>{ const st=safeStorage(), k="wallDevice."+SCREEN;
   let d=""; try{ d=new URLSearchParams(String(location.hash||"").replace(/^#/,"")).get("d")||""; }catch(e){}
   if(/^[A-Za-z0-9_-]{43}$/.test(d)){
-    try{ st&&st.setItem(k,d); }catch(e){}
-    try{ history.replaceState({},"",location.pathname+location.search); }catch(e){}
+    let kept=false; try{ if(st){ st.setItem(k,d); kept=(st.getItem(k)===d); } }catch(e){ kept=false; }
+    if(kept){ try{ history.replaceState({},"",location.pathname+location.search); }catch(e){} }
     return d; }
   try{ return (st&&st.getItem(k))||""; }catch(e){ return ""; } })();
 /* this page session (proof for the console that the PC kept its secret after a restart) */
 const SID=(()=>{ try{ return [...crypto.getRandomValues(new Uint8Array(8))].map(b=>b.toString(16).padStart(2,"0")).join(""); }catch(e){ return ""; } })();
-let STOP=false, LEGACY_FN=false, RELOAD_SEEN;
+let STOP=false, LEGACY_FN=false, RELOAD_SEEN=0;
+/* "Reload all screens" (settings.data._reloadAt): only a value NEWER than the one this page started with
+   reloads it, so an older value written back by another console button does nothing (R3-L1); checked on
+   realtime and on the 5-minute poll, so a press missed by realtime still arrives (R3-L2). Mirrors never reload. */
+function reloadIfNewer(){ const v=+SETTINGS._reloadAt||0;
+  if(v>RELOAD_SEEN&&qs.get("mirror")!=="1"){ RELOAD_SEEN=v; location.reload(); return true; } return false; }
 
 /* ---------- state ---------- */
 let SETTINGS={}, SCENES=[], CONTENT=[], ROT=null, ASSIGN=null;
@@ -434,7 +441,6 @@ async function loadAll(){
   ]);
   if(se.error) throw se.error;
   SETTINGS=Object.assign({},se.data.data||{}); SETTINGS._screen_key=se.data.screen_key;
-  if(RELOAD_SEEN===undefined) RELOAD_SEEN=SETTINGS._reloadAt; /* only a newer "Reload all screens" reloads this page */
   CONTENT=co.data||[]; SCENES=sc.data||[]; ROT=ro.data; ASSIGN=as.data;
 }
 function subscribe(){
@@ -453,7 +459,7 @@ function subscribe(){
           const newSig=JSON.stringify({f:SETTINGS.fit,c:SETTINGS.bannerCropPx,d:SETTINGS.dateFilter});
           if(oldSig!==newSig){ currentUrl=null; lastShownKey=null; }
           if(SETTINGS.canvasPages===true||CANVAS.on) canvasCheck();
-          if(SETTINGS._reloadAt&&SETTINGS._reloadAt!==RELOAD_SEEN&&qs.get("mirror")!=="1"){ location.reload(); return; }
+          if(reloadIfNewer()) return;
           tick(); /* visual settings re-render; identify and the rest leave warm layers alive */}})
     .subscribe();
 }
@@ -516,7 +522,7 @@ function identifyFlash(){ const d=document.getElementById("identify");
 /* ---------- boot ---------- */
 (async()=>{
   await syncClock(); setInterval(syncClock, 10*60000);
-  try{ await loadAll(); }
+  try{ await loadAll(); RELOAD_SEEN=+SETTINGS._reloadAt||0; /* the value this page started with */ }
   catch(e){ document.getElementById("keyerr").textContent="Cannot reach the wall database.\nCheck internet / setup."; 
     document.getElementById("keyerr").style.display="flex"; console.error(e); return; }
   /* key check. Both switches off (canvasPages, deviceChecks): main's exact rule, so an empty or hidden key cell refuses every screen.
@@ -543,7 +549,7 @@ function identifyFlash(){ const d=document.getElementById("identify");
     if(b&&WHY) b.textContent="Waiting: "+WHY; },1500);
   /* safety net: realtime is the primary channel; this backup poll runs every 5 MINUTES
      and never when the tab is hidden — cuts database egress ~40x */
-  setInterval(()=>{ if(!document.hidden) loadAll().then(()=>{ if(SETTINGS.canvasPages===true||CANVAS.on) canvasCheck(); }).catch(()=>{}); },300000);
+  setInterval(()=>{ if(!document.hidden) loadAll().then(()=>{ if(reloadIfNewer()) return; if(SETTINGS.canvasPages===true||CANVAS.on) canvasCheck(); }).catch(()=>{}); },300000);
   /* DATA refresh: re-query visuals on every live embed (visible + warm) */
   const refMin=Math.max(5,(SETTINGS.autoRefreshMinutes||10));
   setInterval(()=>{ Object.values(pbiReports).forEach(r=>{ try{ r.refresh().catch(()=>{});}catch(e){} }); },refMin*60000);
