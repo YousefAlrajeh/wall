@@ -118,7 +118,8 @@
       if (v !== shown.version) {
         var at = snap && snap.fetched_at ? Date.parse(snap.fetched_at) + APPLY_LAG_MS : NaN;
         var first = shown.version <= 0;   /* nothing shown yet (start, or no data before): show it at once, without the count-up */
-        if (first || !isFinite(at) || nowMs >= at) { build(snap, first || !isFinite(at) ? -1e9 : at / 1000); shown.version = v; info.applied++; }
+        if (first || !isFinite(at) || nowMs >= at) { build(snap, first || !isFinite(at) ? -1e9 : at / 1000); shown.version = v; info.applied++; shown.pendingAt = null; }
+        else shown.pendingAt = at;   /* frame() applies it on the first frame at or after this wall time (checker_figs2 L2) */
       }
       view.stale = !!(st && st.stale);
       view.nodata = ctx.mode === "blank" ? false : !(snap && st.hasData);
@@ -131,6 +132,7 @@
     function frame() {
       if (!alive || !g) return;
       var t0 = (root.performance && root.performance.now) ? root.performance.now() : Date.now();
+      if (shown.pendingAt != null && ctx.now() >= shown.pendingAt) check();   /* the switch lands on a frame, not on the 1 s tick */
       var B = L.bezelPx, w = L.windowFor(screen, B), T = ctx.now() / 1000, cyc = S.cycleLen(), t = ((T % cyc) + cyc) % cyc;
       g.setTransform(1, 0, 0, 1, -w.x, -w.y);
       g.save(); g.beginPath(); g.rect(w.x, w.y, L.SCREEN_W, L.SCREEN_H); g.clip();

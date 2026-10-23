@@ -130,16 +130,19 @@
       var c = h("div", { "class": "cell", style: "font-size:14px;cursor:default" });
       c.appendChild(h("b", {}, s));
       var age = x ? Math.round((Date.now() - Date.parse(x.last_seen)) / 1000) : null;
-      /* screens report with each feed call, every 5 minutes: silent only after 7 minutes */
-      var line = !x ? "no report" : (age > 420 ? "silent " + Math.round(age / 60) + " min" : (x.state || "seen") + ", clock " + (x.clock_offset_ms == null ? "?" : "ok"));
+      /* screens report with each feed call (every 5 minutes, plus a retry 30 s after a failure): silent only after 11 minutes,
+         that is 2 lost calls in a row (checker_figs2 L4) */
+      var line = !x ? "no report" : (age > 660 ? "silent " + Math.round(age / 60) + " min" : (x.state || "seen") + ", clock " + (x.clock_offset_ms == null ? "?" : "ok"));
       var d = h("div", { style: "font-size:14px" }, line);
-      if (!x || age > 420 || x.state === "stale" || x.error_code) d.style.color = AMBER;
+      if (!x || age > 660 || x.state === "stale" || x.error_code) d.style.color = AMBER;
       c.appendChild(d);
       grid.appendChild(c);
     });
   }
 
   setTimeout(paintSettings, 1500); /* once: never overwrite what the admin is typing */
-  accStatus(); setInterval(accStatus, 60000);
-  paintHealth(); setInterval(paintHealth, 30000);
+  /* while this tab is hidden the two status polls pause (Free plan egress, checker_figs2 M2); they run again when it is shown */
+  /* screens report every 5 minutes and the figures job runs every 15 minutes: health every 2 minutes, figures status every 5 */
+  accStatus(); setInterval(function () { if (!document.hidden) accStatus(); }, 300000);
+  paintHealth(); setInterval(function () { if (!document.hidden) paintHealth(); }, 120000);
 })();

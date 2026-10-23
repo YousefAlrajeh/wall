@@ -1,6 +1,6 @@
 /* wall-feed-client.js - fetches the checked figures snapshot for this screen (canvasPages on only).
    Once at start (and so at every page load or reload), then every 5 minutes (Supabase Free plan function quota,
-   builder_figs_free.md): POST {s,k,d,have,h} to the wall-feed function. Keeps the last good snapshot
+   builder_figs_free.md), plus one retry 30 s after a failed call: POST {s,k,d,have,h} to the wall-feed function. Keeps the last good snapshot
    (memory + this PC's browser storage), so an outage shows the last figures, not blanks.
    Also holds the "Data as of" / "No new data since" rule.
    Classic script: window.WallFeed in a browser, module.exports in Node. */
@@ -9,8 +9,11 @@
   var REFRESH_HOURS = [7, 9, 11, 13, 15, 17, 19, 23]; /* model refreshes, Riyadh time */
   var TZ_MIN = 180;                                    /* Riyadh is UTC+3 all year */
   var FEED_POLL_MS = 300000;                           /* one feed call every 5 minutes (was 60 s) */
-  var GRACE_MIN = 60 + FEED_POLL_MS / 60000;           /* 60 min refresh + figures job allowance, plus one poll interval,
-                                                          so the 5-minute polling alone can never make a screen stale */
+  var RETRY_MS = 30000;                                /* after a failed call: one quick retry (checker_figs2 M1) */
+  var RETRY_GAP_MS = 3600000;                          /* at most one retry an hour: the Free plan call budget holds even
+                                                          if every scheduled call failed and every retry worked */
+  var GRACE_MIN = 60 + FEED_POLL_MS / 60000 + 1;       /* 60 min refresh + figures job allowance, plus one poll interval and
+                                                          1 minute, so the 5-minute polling alone never makes a screen stale */
   var MAX_BYTES = 65536;
   var SECRET_KEY_RE = /token|secret|password|authori[sz]ation|bearer|refresh|verifier|device_?code|api_?key|apikey|cookie|session/i;
 
@@ -57,6 +60,16 @@
     var now = o.now || function () { return Date.now(); };
     var store = o.storage || null, SKEY = "wallFeed.v1." + o.screen;
     var setIv = o.setInterval || function (f, ms) { return root.setInterval(f, ms); };
+    var setTo = o.setTimeout || function (f, ms) { return root.setTimeout(f, ms); };
+    /* a failed call (server error, time-out, network) is retried once after 30 s; not again until a call succeeds, and at most
+       once an hour, so a long outage costs at most one extra call an hour. A refusal (401) is not retried. */
+    var retryArmed = true, lastRetry = -Infinity;
+    function failed() {
+      var t = now();
+      if (!retryArmed || t - lastRetry < RETRY_GAP_MS) return;
+      retryArmed = false; lastRetry = t;
+      setTo(function () { poll(); }, o.retryMs || RETRY_MS);
+    }
     var snap = null, denied = false, lastOkAt = null, lastErr = null, listeners = [], timer = null;
     try { var s0 = store && store.getItem(SKEY); if (s0) { var j0 = JSON.parse(s0); if (acceptable(j0, s0)) snap = j0; } } catch (e) { }
 
@@ -68,10 +81,10 @@
       return Promise.resolve(doFetch(o.url, { method: "POST", headers: hdr, body: JSON.stringify(body), cache: "no-store" }))
         .then(function (r) {
           if (r.status === 401) { denied = true; lastErr = "DENIED"; emit(); return; }
-          if (!r.ok) { lastErr = "HTTP_" + r.status; return; }
+          if (!r.ok) { lastErr = "HTTP_" + r.status; failed(); return; }
           return r.text().then(function (t) {
             var j = JSON.parse(t);
-            denied = false; lastOkAt = now();
+            denied = false; lastOkAt = now(); retryArmed = true;
             if (j && j.unchanged === true && snap && j.version === snap.version) { lastErr = null; return; }
             if (!acceptable(j, t)) { lastErr = "REJECTED"; return; }
             lastErr = null; snap = j;
@@ -79,7 +92,7 @@
             emit();
           });
         })
-        .catch(function () { lastErr = "UNREACHABLE"; });
+        .catch(function () { lastErr = "UNREACHABLE"; failed(); });
     }
     function start() { if (!timer) timer = setIv(poll, o.intervalMs || FEED_POLL_MS); return poll(); }
     function status() {
@@ -93,6 +106,6 @@
       onChange: function (f) { listeners.push(f); return function () { var i = listeners.indexOf(f); if (i >= 0) listeners.splice(i, 1); }; } };
   }
   var F = { create: create, isStale: isStale, nextRefreshAfter: nextRefreshAfter, fmtAsOf: fmtAsOf,
-    REFRESH_HOURS: REFRESH_HOURS, TZ_MIN: TZ_MIN, GRACE_MIN: GRACE_MIN, FEED_POLL_MS: FEED_POLL_MS };
+    REFRESH_HOURS: REFRESH_HOURS, TZ_MIN: TZ_MIN, GRACE_MIN: GRACE_MIN, FEED_POLL_MS: FEED_POLL_MS, RETRY_MS: RETRY_MS, RETRY_GAP_MS: RETRY_GAP_MS };
   if (typeof module !== "undefined" && module.exports) module.exports = F; else root.WallFeed = F;
 })(this);

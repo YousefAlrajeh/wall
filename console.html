@@ -208,7 +208,7 @@ function consoleClock(){ if(CCLOCK||!canvasOn()) return;
   const s=document.createElement("script"); s.src="wall-clock.js";
   s.onload=()=>{ const c=WallClock.create({url:String(C.SUPA_URL).replace(/\/$/,"")+"/rest/v1/rpc/wall_now",
       fallbackUrl:String(C.SUPA_URL).replace(/\/$/,"")+"/functions/v1/clock",
-      headers:{apikey:C.SUPA_KEY,Authorization:"Bearer "+C.SUPA_KEY}});
+      headers:{apikey:C.SUPA_KEY,Authorization:"Bearer "+C.SUPA_KEY},resyncSamples:3}); /* 8 at start, then 3 a minute, as the screens (Free plan egress) */
     c.start().then(()=>{CCLOCK=c;}).catch(()=>{}); };
   document.head.appendChild(s); }
 window.ST_settings=()=>ST.settings; /* read-only view for console-labs.js */
@@ -241,7 +241,8 @@ function boot(){ rotTx.innerHTML=txOpts("fade"); load();
   enrolList();
   if(new URLSearchParams(location.search).get("labs")==="1"){ /* wall pages setup box, admins only, hidden otherwise */
     const s=document.createElement("script"); s.src="console-labs.js"; document.head.appendChild(s); }
-  setInterval(()=>{ if(!document.hidden) load(); },30000); /* light poll; actions refresh instantly anyway */
+  let LOAD_TICK=0; /* canvasPages on: every 2 minutes (Free plan egress, builder_figs3b.md); switch off: every 30 s as before */
+  setInterval(()=>{ if(canvasOn()&&(++LOAD_TICK%4)) return; if(!document.hidden) load(); },30000); /* light poll; actions refresh instantly anyway */
   paintLinks(); setInterval(rotPaint,1000); }
 
 /* ---------- render ---------- */
