@@ -4,6 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ECC Wall Player</title>
 <script src="config.js"></script>
+<script src="wall-layout.js"></script>
 <style>
   html,body{margin:0;height:100%;background:#000;overflow:hidden}
   #stage{position:fixed;inset:0;background:#000}
@@ -45,12 +46,36 @@ const SCREEN = (qs.get("s")||"R1C1").toUpperCase();
 const KEY = qs.get("k")||"";
 document.getElementById("bootId").textContent = SCREEN;
 const sb = createClient(C.SUPA_URL, C.SUPA_KEY);
+function safeStorage(){ try{ return window.localStorage; }catch(e){ return null; } }
+/* screen enrolment: the screen's link from the console carries #d=<this PC's own device secret> in the
+   fragment (never sent to any server as part of the address). It is also kept in this PC's browser
+   storage. It leaves the address bar only once the storage gives the same secret back; on a PC whose
+   browser storage is blocked it stays there, so every in-page reload (03:00, "Reload all screens", the
+   switch-off reload) still has it (checker_wallv2_r3 R3-M1). */
+const DEVICE=(()=>{ const st=safeStorage(), k="wallDevice."+SCREEN;
+  let d=""; try{ d=new URLSearchParams(String(location.hash||"").replace(/^#/,"")).get("d")||""; }catch(e){}
+  if(/^[A-Za-z0-9_-]{43}$/.test(d)){
+    let kept=false; try{ if(st){ st.setItem(k,d); kept=(st.getItem(k)===d); } }catch(e){ kept=false; }
+    if(kept){ try{ history.replaceState({},"",location.pathname+location.search); }catch(e){} }
+    return d; }
+  try{ return (st&&st.getItem(k))||""; }catch(e){ return ""; } })();
+/* this page session (proof for the console that the PC kept its secret after a restart) */
+const SID=(()=>{ try{ return [...crypto.getRandomValues(new Uint8Array(8))].map(b=>b.toString(16).padStart(2,"0")).join(""); }catch(e){ return ""; } })();
+let STOP=false, LEGACY_FN=false, RELOAD_SEEN=0;
+/* "Reload all screens" (settings.data._reloadAt): only a value NEWER than the one this page started with
+   reloads it, so an older value written back by another console button does nothing (R3-L1); checked on
+   realtime and on the 5-minute poll, so a press missed by realtime still arrives (R3-L2). Mirrors never reload. */
+function reloadIfNewer(){ const v=+SETTINGS._reloadAt||0;
+  if(v>RELOAD_SEEN&&qs.get("mirror")!=="1"){ RELOAD_SEEN=v; location.reload(); return true; } return false; }
 
 /* ---------- state ---------- */
 let SETTINGS={}, SCENES=[], CONTENT=[], ROT=null, ASSIGN=null;
 let gen=0, currentUrl=null, lastCmd=null;
 let CLOCK_OFFSET=0; /* serverNow - localNow: every screen shares one clock */
-const NOW=()=>Date.now()+CLOCK_OFFSET;
+/* canvasPages (settings.data.canvasPages===true) only: shared clock, figures feed, wall pages.
+   Switch off: CANVAS stays empty and every line below behaves exactly as before. */
+const CANVAS={on:false,clock:null,feed:null,ready:null,err:null,pages:{}};
+const NOW=()=>(CANVAS.clock&&CANVAS.clock.isSynced())?CANVAS.clock.now():Date.now()+CLOCK_OFFSET;
 async function syncClock(){
   try{ const t0=Date.now();
     const r=await fetch(C.TOKEN_FN+"?now=1"); const j=await r.json();
@@ -74,19 +99,7 @@ function loadSdk(){ if(powerbiReady) return powerbiReady;
 function wallDelay(){ /* Wall Sequencer: deterministic wave offset for THIS screen (0 = today's behavior) */
   const ws=SETTINGS.wallSeq;
   if(!ws||!ws.enabled) return 0;
-  const m=SCREEN.match(/^R([1-3])C([1-7])$/); if(!m) return 0;
-  const row=+m[1], col=+m[2];
-  let groupIdx=0, pos=0, count=7;
-  if(ws.mode==="rows"){ count=3; groupIdx=row-1; pos=col-1; }
-  else if(ws.mode==="all"){ count=1; groupIdx=0; pos=(row-1)*7+(col-1); }
-  else { count=7; groupIdx=col-1; pos=row-1; }             /* columns (default) */
-  let order=[]; 
-  if(Array.isArray(ws.order)&&ws.order.length) order=ws.order.map(n=>+n-1);
-  else order=[...Array(count).keys()];
-  if(ws.reverseOrder) order=[...order].reverse();
-  let oi=order.indexOf(groupIdx); if(oi<0) oi=order.length; /* not in order -> after everyone */
-  if(ws.reverseInGroup) pos=( (ws.mode==="rows")?7:(ws.mode==="all"?21:3) )-1-pos;
-  return oi*(+ws.stepMs||400) + pos*(+ws.staggerMs||0);
+  return WallLayout.waveDelay(SCREEN,ws,"player"); /* shape from wall-layout.js; same arithmetic as before */
 }
 function dateFilterArr(models){
   const f=SETTINGS.dateFilter;
@@ -109,6 +122,8 @@ function resetView(b){ b.el.classList.remove("crop"); b.el.classList.remove("fil
 function cleanBuf(b){
   WARM[b.id]=null; WARMLOADING[b.id]=null; resetView(b);
   if(pbiReports[b.id]){ try{window.powerbi&&powerbi.reset(b.pbi);}catch(e){} delete pbiReports[b.id]; }
+  if(b.wpView){ try{b.wpView.destroy();}catch(e){} b.wpView=null; }   /* wall pages only (canvasPages on) */
+  if(b.wp) b.wp.style.display="none";
   b.pbi.style.display="none"; b.ifr.style.display="block";
   try{b.ifr.src="about:blank";}catch(e){}
 }
@@ -176,10 +191,19 @@ function runEffect(cmd,g){
 }
 
 /* ---------- loading ---------- */
+/* text/plain keeps it a simple request: no extra preflight call per token request */
+function tokenPost(body){ return fetch(C.TOKEN_FN,{method:"POST",headers:{"Content-Type":"text/plain"},body:JSON.stringify(body)}); }
+function tokenGet(contentId,fresh){ return fetch(C.TOKEN_FN+"?content="+encodeURIComponent(contentId)+"&k="+encodeURIComponent(KEY)+(fresh?"&fresh=1":"")); }
 async function tokenConfig(contentId,fresh){
-  const r = await fetch(C.TOKEN_FN+"?content="+encodeURIComponent(contentId)+"&k="+encodeURIComponent(KEY)+(fresh?"&fresh=1":""));
+  const viaGet=LEGACY_FN; /* decide by the form THIS request used (the background check may switch it meanwhile) */
+  let r = viaGet ? await tokenGet(contentId,fresh) : await tokenPost({content:contentId,s:SCREEN,k:KEY,d:DEVICE,fresh:!!fresh});
   let j=null; try{ j=await r.json(); }catch(e){}
+  if(!viaGet&&r.status===403&&j&&j.error==="bad key"){ /* maybe the old function is live (deployed first, or put back): old request form */
+    const r2 = await tokenGet(contentId,fresh); let j2=null; try{ j2=await r2.json(); }catch(e){}
+    if(!(r2.status===403&&j2&&j2.error==="bad key")){ LEGACY_FN=true; r=r2; j=j2; } }
   if(!r.ok){
+    if(j&&j.error==="not_enrolled"){ enrolNotice(true); WHY="screen not set up: reports need this PC's one-time link"; throw new Error("not_enrolled"); }
+    if(j&&j.error==="account_mismatch"){ WHY="Microsoft sign-in is not the expected account: ask an admin to check the console"; throw new Error("account_mismatch"); }
     if(j&&j.error==="reauth_required"){ WHY="MICROSOFT RE-AUTH REQUIRED — open the console and click Authorize Microsoft"; throw new Error("reauth_required"); }
     if(j&&j.error==="retry_later"){ WHY="Microsoft sign-in service busy — retrying automatically"; throw new Error("retry_later"); }
     throw new Error("token fn "+r.status);
@@ -227,6 +251,15 @@ function show(cmd){
 }
 function coldLoad(cmd,g){
   cleanBuf(back);
+  if(cmd.wallpage){ /* canvasPages on only: cmdFor never sets .wallpage when the switch is off */
+    const b=back;
+    wpLoad(b,cmd).then(()=>{ if(g!==gen) return;
+      WARM[b.id]={url:cmd.url}; WARMLOADING[b.id]=null;
+      after(cmd.settleMs,()=>runEffect(cmd,g)); })
+    .catch(()=>{ CANVAS.err="PAGE_UNAVAILABLE"; WHY="wall page not available";
+      if(g===gen) after(8000,()=>{currentUrl=null;show(cmd);}); });
+    return;
+  }
   if(cmd.tokenEmbed&&cmd.contentId){
     let settled=false;
     embedPbi(back,cmd,()=>{ if(settled||g!==gen)return; settled=true;
@@ -253,6 +286,11 @@ function prewarm(cmd){
   if(lastCmd&&currentUrl!==lastCmd.url) return; /* a real load is in flight; the next tick will retry */
   const wg=++warmGen,g0=gen;
   cleanBuf(back); WARMLOADING[back.id]={url:cmd.url,startedAt:Date.now()};
+  if(cmd.wallpage){ const b=back; /* canvasPages on only */
+    wpLoad(b,cmd).then(()=>{ if(wg===warmGen&&g0===gen){WARM[b.id]={url:cmd.url};WARMLOADING[b.id]=null;} })
+      .catch(()=>{WARMLOADING[b.id]=null;});
+    return;
+  }
   if(cmd.tokenEmbed&&cmd.contentId){
     embedPbi(back,cmd,()=>{ if(wg===warmGen&&g0===gen){WARM[back.id]={url:cmd.url};WARMLOADING[back.id]=null;} })
       .catch(()=>{WARMLOADING[back.id]=null;});
@@ -271,6 +309,8 @@ function imgWrap(u){ /* full-bleed page for direct image links (logo slices, pho
 function isImg(u){return /\.(png|jpe?g|gif|webp)(\?|$)/i.test(u||"")||/^data:image\//.test(u||"");}
 function cmdFor(contentId,extra){
   const c=cById(contentId); if(!c) return null;
+  if(SETTINGS.canvasPages===true&&/^wallpage:[a-z0-9-]{1,32}$/.test(c.url||"")) /* new kind, switch on only */
+    return Object.assign({url:c.url,contentId:c.id,tokenEmbed:false,wallpage:c.url.slice(9),settleMs:c.settle_ms??300,cropTop:0},extra||{});
   const pbi=isPbi(c.url);
   if(!pbi&&isImg(c.url)) return Object.assign({url:imgWrap(c.url),contentId:c.id,tokenEmbed:false,settleMs:c.settle_ms??500,cropTop:0},extra||{});
   return Object.assign({url:c.url,contentId:c.id,tokenEmbed:pbi,
@@ -297,6 +337,7 @@ function scheduleFlip(remain){
   flipTimer=setTimeout(()=>{ flipTimer=null; tick(); }, Math.max(20,remain+15));
 }
 function tick(){
+  if(STOP) return;
   const r=rotationNow();
   if(r){
     const sc=SCENES.find(s=>s.id===r.item.sceneId);
@@ -328,6 +369,67 @@ function tick(){
   }
 }
 
+/* ---------- wall pages, shared clock, figures feed (canvasPages on only) ---------- */
+function deviceSecret(){ return DEVICE; }
+function healthNow(){ /* fixed codes and numbers only, never names or free text */
+  const cs=CANVAS.clock?CANVAS.clock.stats():{};
+  const fs=CANVAS.feed?CANVAS.feed.status():{};
+  return {state:!currentUrl?"waiting":(fs.stale?"stale":"showing"), err:CANVAS.err,
+    showing:(lastCmd&&typeof lastCmd.contentId==="string"&&/^[A-Za-z0-9_:.-]{1,64}$/.test(lastCmd.contentId))?lastCmd.contentId:null,
+    off:Number.isInteger(cs.offsetMs)?cs.offsetMs:null, rtt:Number.isInteger(cs.rttMs)?cs.rttMs:null, ver:fs.version||0};
+}
+function loadScript(src){ return new Promise((res,rej)=>{ const s=document.createElement("script"); s.src=src; s.onload=res; s.onerror=rej; document.head.appendChild(s); }); }
+function canvasStart(){
+  if(CANVAS.ready) return CANVAS.ready;
+  CANVAS.on=true;
+  WallLayout.configure(SETTINGS.wallLayout);
+  CANVAS.ready=(async()=>{
+    await Promise.all(["wall-clock.js","wall-render.js","wall-feed-client.js"].map(loadScript));
+    const fnBase=String(C.SUPA_URL).replace(/\/$/,"")+"/functions/v1/";
+    const hdr={apikey:C.SUPA_KEY,Authorization:"Bearer "+C.SUPA_KEY};
+    /* time from the read-only database function (REST API); the edge function `clock` only as fallback */
+    CANVAS.clock=WallClock.create({url:String(C.SUPA_URL).replace(/\/$/,"")+"/rest/v1/rpc/wall_now",fallbackUrl:fnBase+"clock",headers:hdr});
+    try{ await CANVAS.clock.start(); }catch(e){ CANVAS.err="CLOCK_UNREACHABLE"; }
+    CANVAS.feed=WallFeed.create({url:fnBase+"wall-feed",anonKey:C.SUPA_KEY,screen:SCREEN,key:KEY,device:deviceSecret(),
+      now:NOW,storage:safeStorage(),health:healthNow});
+    CANVAS.feed.start();
+  })();
+  return CANVAS.ready;
+}
+/* switch on at runtime: start; switch off at runtime: reload, which brings back today's behaviour exactly */
+function canvasCheck(){
+  if(SETTINGS.canvasPages===true&&!CANVAS.on){ canvasStart(); currentUrl=null; lastShownKey=null; return; }
+  if(SETTINGS.canvasPages!==true&&CANVAS.on){ location.reload(); return; }
+  if(CANVAS.on){ const a=WallLayout.bezelPx, s=WallLayout.safePx, n=WallLayout.configure(SETTINGS.wallLayout);
+    if(n.bezelPx!==a||n.safePx!==s){ currentUrl=null; lastShownKey=null; } }
+}
+async function wpPage(id){
+  if(CANVAS.pages[id]) return CANVAS.pages[id];
+  const r=await fetch("wallpages/"+id+".json",{cache:"no-store"});
+  if(!r.ok) throw new Error("page");
+  const p=await r.json();
+  if(WallRender.checkPage(p,WallLayout).some(x=>x==="PAGE_NOT_OBJECT"||x==="PAGE_ID")) throw new Error("page");
+  CANVAS.pages[id]=p; return p;
+}
+/* the approved story design (engine "story5"): its scripts load once, in order, only when a screen first shows it */
+function storyReady(){
+  if(!CANVAS.story) CANVAS.story=(async()=>{ for(const s of ["wallstory/hmg_mark_mono_shape.js","wallstory/story_geo_public.js","wallstory/story5d_engine.js","wallstory/story5e_stories.js","wall-story.js"]) await loadScript(s); })();
+  return CANVAS.story;
+}
+async function wpLoad(b,cmd){
+  await CANVAS.ready;
+  const page=await wpPage(cmd.wallpage);
+  if(page.engine==="story5") await storyReady();
+  if(!b.wp){ b.wp=document.createElement("div"); b.wp.className="wp";
+    b.wp.style.cssText="position:absolute;inset:0;width:100%;height:100%;overflow:hidden;display:none;background:#000";
+    b.el.appendChild(b.wp); }
+  if(b.wpView){ try{b.wpView.destroy();}catch(e){} b.wpView=null; }
+  b.ifr.style.display="none"; b.pbi.style.display="none"; b.wp.style.display="block";
+  b.wpView=(page.engine==="story5"?WallStory:WallRender).mount(b.wp,page,{screen:SCREEN,layout:WallLayout,now:NOW,feed:CANVAS.feed});
+  if(b.wpView.info().tilesSkipped) CANVAS.err="TILE_OUTSIDE_SAFE";
+  /* wall pages never enter pbiReports, so the 10-minute report.refresh() below never touches them */
+}
+
 /* ---------- data load + realtime ---------- */
 async function loadAll(){
   const [se,co,sc,ro,as]=await Promise.all([
@@ -356,6 +458,8 @@ function subscribe(){
           if(SETTINGS._forceSync&&SETTINGS._forceSync!==SETTINGS._fs_seen){SETTINGS._fs_seen=SETTINGS._forceSync;lastShownKey=null;}
           const newSig=JSON.stringify({f:SETTINGS.fit,c:SETTINGS.bannerCropPx,d:SETTINGS.dateFilter});
           if(oldSig!==newSig){ currentUrl=null; lastShownKey=null; }
+          if(SETTINGS.canvasPages===true||CANVAS.on) canvasCheck();
+          if(reloadIfNewer()) return;
           tick(); /* visual settings re-render; identify and the rest leave warm layers alive */}})
     .subscribe();
 }
@@ -371,26 +475,81 @@ if(DEBUG){ const d=document.createElement("div");
       +"\ngen:"+gen+" key:"+String(lastShownKey||"-").slice(0,34)
       +(WHY?"\nWHY: "+WHY:"")
       +"  offset:"+Math.round(CLOCK_OFFSET)+"ms"; },500); }
+/* ---------- screen enrolment and key check (brief step 2) ---------- */
+async function screenCheck(){
+  try{
+    const r=await tokenPost({action:"check",s:SCREEN,k:KEY,d:DEVICE,sid:(qs.get("mirror")==="1"?"":SID)});
+    let j=null; try{ j=await r.json(); }catch(e){}
+    if(r.status===403&&j&&j.error==="bad key"){
+      if(SETTINGS._screen_key){ LEGACY_FN=true; return; } /* key cell present: the local check already decided (old function) */
+      /* cell empty: refuse only if the old request form says the same (the old function answers "bad key" to every new-form call) */
+      const r2=await fetch(C.TOKEN_FN+"?content=__keycheck__&k="+encodeURIComponent(KEY)); let j2=null; try{ j2=await r2.json(); }catch(e){}
+      if(r2.status===403&&j2&&j2.error==="bad key"){ if(!SETTINGS._screen_key) refuseKey(); return; }
+      LEGACY_FN=true; return; }
+    /* the notice appears on screens only once enforcement is on; before that the console shows who is not set up */
+    if(r.ok&&j&&j.key===true&&j.enrolled===false&&j.required===true) enrolNotice(true);
+  }catch(e){}
+}
+/* switch on and the key cell empty or hidden: the server must confirm the key at start. "ok" | "bad" | "unreachable" */
+async function serverKey(){
+  try{
+    const r=await tokenPost({action:"check",s:SCREEN,k:KEY,d:DEVICE,sid:(qs.get("mirror")==="1"?"":SID)});
+    let j=null; try{ j=await r.json(); }catch(e){}
+    if(r.ok&&j&&j.key===true) return "ok";
+    if(r.status===403&&j&&j.error==="bad key"){ /* the old function answers "bad key" to every new-form call: ask it the old way */
+      const r2=await fetch(C.TOKEN_FN+"?content=__keycheck__&k="+encodeURIComponent(KEY)); let j2=null; try{ j2=await r2.json(); }catch(e){}
+      if(r2.status===403&&j2&&j2.error==="bad key") return "bad";
+      if(r2.status===400){ LEGACY_FN=true; return "ok"; } /* old function: key accepted, unknown content */
+    }
+    return "unreachable";
+  }catch(e){ return "unreachable"; }
+}
+function refuseKey(){
+  STOP=true; gen++; cleanBuf(front); cleanBuf(back); front.el.classList.remove("front"); currentUrl=null;
+  document.getElementById("keyerr").style.display="flex";
+  document.getElementById("boot").style.display="none";
+}
+function enrolNotice(required){
+  let n=document.getElementById("enrol");
+  if(!n){ n=document.createElement("div"); n.id="enrol";
+    n.style.cssText="position:fixed;left:2vw;right:2vw;bottom:2vh;z-index:55;padding:12px 18px;border-radius:10px;background:rgba(20,10,4,.88);color:#F0A04A;font:600 max(18px,1.5vw) Segoe UI,sans-serif;text-align:center";
+    document.body.appendChild(n); }
+  n.textContent="This screen PC is not set up, so reports cannot load. Use this screen's link from the console (Screen PCs).";
+}
 function identifyFlash(){ const d=document.getElementById("identify");
   d.textContent=SCREEN; d.style.display="flex"; after(4000,()=>d.style.display="none"); }
 
 /* ---------- boot ---------- */
 (async()=>{
   await syncClock(); setInterval(syncClock, 10*60000);
-  try{ await loadAll(); }
+  try{ await loadAll(); RELOAD_SEEN=+SETTINGS._reloadAt||0; /* the value this page started with */ }
   catch(e){ document.getElementById("keyerr").textContent="Cannot reach the wall database.\nCheck internet / setup."; 
     document.getElementById("keyerr").style.display="flex"; console.error(e); return; }
-  if(!SETTINGS._screen_key || KEY!==SETTINGS._screen_key){
+  /* key check. Both switches off (canvasPages, deviceChecks): main's exact rule, so an empty or hidden key cell refuses every screen.
+     Either on: a key cell that is present must equal the key; an empty or hidden cell (rollout step 9) refuses unless the server
+     itself confirms this key first, so it is never weaker than main; nothing plays before that answer. */
+  const SEC=SETTINGS.canvasPages===true||SETTINGS.deviceChecks===true;
+  let keyRes=null;
+  if(SEC&&KEY&&!SETTINGS._screen_key) keyRes=await serverKey();
+  if(!SEC ? (!SETTINGS._screen_key || KEY!==SETTINGS._screen_key) : (!KEY || (SETTINGS._screen_key ? KEY!==SETTINGS._screen_key : keyRes!=="ok"))){
     document.getElementById("keyerr").style.display="flex";
-    document.getElementById("boot").style.display="none"; return; }
+    document.getElementById("boot").style.display="none";
+    if(keyRes==="unreachable") after(60000,()=>location.reload()); /* the server could not answer: ask again in a minute (still refused meanwhile) */
+    return; }
+  if(SETTINGS.canvasPages===true) canvasStart();
   subscribe();
   tick();
   setInterval(tick,1000);
+  /* both switches off (canvasPages, deviceChecks): exactly today's network traffic (old GET token form, no background key check);
+     either on: the new token form and the background key check, which also records the screen's session for the console's
+     step 6 and 7 gates (security rollout, paused D-237: deviceChecks on, then "Reload all screens", BEFORE its step 6) */
+  if(SETTINGS.canvasPages===true||SETTINGS.deviceChecks===true) screenCheck(); /* background: never delays or blanks the wall unless the server clearly refuses the key */
+  else LEGACY_FN=true;
   setInterval(()=>{ const b=document.getElementById("bootWhy");
     if(b&&WHY) b.textContent="Waiting: "+WHY; },1500);
   /* safety net: realtime is the primary channel; this backup poll runs every 5 MINUTES
      and never when the tab is hidden — cuts database egress ~40x */
-  setInterval(()=>{ if(!document.hidden) loadAll().catch(()=>{}); },300000);
+  setInterval(()=>{ if(!document.hidden) loadAll().then(()=>{ if(reloadIfNewer()) return; if(SETTINGS.canvasPages===true||CANVAS.on) canvasCheck(); }).catch(()=>{}); },300000);
   /* DATA refresh: re-query visuals on every live embed (visible + warm) */
   const refMin=Math.max(5,(SETTINGS.autoRefreshMinutes||10));
   setInterval(()=>{ Object.values(pbiReports).forEach(r=>{ try{ r.refresh().catch(()=>{});}catch(e){} }); },refMin*60000);

@@ -1,0 +1,27 @@
+-- WS-wall21: schedule for the figures job. NOT APPLIED, and every statement is commented out on purpose:
+-- it is switched on only after the user approves go-live and the Vault entries named below exist.
+-- Needs the pg_cron and pg_net extensions. Vault names (values never written here):
+--   wall_project_url  (the project address), wall_anon_key (the public anon key), wall_pull_secret (= WALL_PULL_SECRET)
+-- Riyadh is UTC+3 all year. Model refreshes 07,09,11,13,15,17,19,23 Riyadh = 04,06,08,10,12,14,16,20 UTC.
+-- Mode "check" runs the queries only when the model shows a newer completed refresh, so both jobs are cheap.
+
+-- select cron.schedule('wall-figures-after-refresh', '10,25,40 4,6,8,10,12,14,16,20 * * *', $job$
+--   select net.http_post(
+--     url := (select decrypted_secret from vault.decrypted_secrets where name = 'wall_project_url') || '/functions/v1/wall-figures-pull',
+--     headers := jsonb_build_object(
+--       'Content-Type', 'application/json',
+--       'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'wall_anon_key'),
+--       'x-wall-pull-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'wall_pull_secret')),
+--     body := '{"mode":"check"}'::jsonb);
+-- $job$);
+
+-- light check every 15 minutes, 06:00-23:59 Riyadh (03-20 UTC)
+-- select cron.schedule('wall-figures-light-check', '*/15 3-20 * * *', $job$
+--   select net.http_post(
+--     url := (select decrypted_secret from vault.decrypted_secrets where name = 'wall_project_url') || '/functions/v1/wall-figures-pull',
+--     headers := jsonb_build_object(
+--       'Content-Type', 'application/json',
+--       'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'wall_anon_key'),
+--       'x-wall-pull-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'wall_pull_secret')),
+--     body := '{"mode":"check"}'::jsonb);
+-- $job$);

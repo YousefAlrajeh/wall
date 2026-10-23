@@ -1,0 +1,6 @@
+{
+  "id": "story",
+  "title": "Wall story (approved design round 5e, D-243)",
+  "engine": "story5",
+  "note": "Drawn by wall-story.js and wallstory/: each screen shows its own part of one shared scene on the shared clock. Figures come only from the figures feed (pages ecc1d, mt1d, mtunits, fmevents)."
+}
