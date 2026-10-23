@@ -93,10 +93,11 @@ export function makeDb(env, fetchFn) {
     },
     async putPending(p) { await upsert("wall_reader_pending", { id: "main", ...p }, "id"); },
     async deletePending() { await del("wall_reader_pending?id=eq.main"); },
-    // single use: the pending sign-in whose state hash matches is deleted and returned in one statement (null if none)
-    async takePending(stateHash) {
-      if (!/^[0-9a-f]{64}$/.test(stateHash)) return null;
-      const r = await fetchFn(base + "/rest/v1/wall_reader_pending?id=eq.main&device_code=like." + encodeURIComponent("pkce1:" + stateHash + ":*"),
+    // single use: the pending sign-in whose state hash matches AND that this admin started is deleted and returned in one
+    // statement (null if none; another admin cannot use it up)
+    async takePending(stateHash, userId) {
+      if (!/^[0-9a-f]{64}$/.test(stateHash) || !/^[0-9a-f-]{36}$/i.test(String(userId || ""))) return null;
+      const r = await fetchFn(base + "/rest/v1/wall_reader_pending?id=eq.main&started_by=eq." + encodeURIComponent(userId) + "&device_code=like." + encodeURIComponent("pkce1:" + stateHash + ":*"),
         { method: "DELETE", headers: { ...H, Prefer: "return=representation" } });
       if (r.status >= 300) throw new Error("DB_" + r.status);
       const rows = await r.json();

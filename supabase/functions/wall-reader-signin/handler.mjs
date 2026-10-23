@@ -64,7 +64,7 @@ export async function handle(req, { env, db, fetch: rawFetch, now }) {
     const state = String(b.state || "");
     if (!STATE_RE.test(state)) return json(req, env, 200, { state: "bad_state" });
     const stateHash = await sha256Hex(state);
-    const p = await db.takePending(stateHash);                                // single use: gone after this, whatever happens
+    const p = await db.takePending(stateHash, adm.userId);                    // single use, and only by the admin who started it
     if (!p) return json(req, env, 200, { state: "bad_state" });
     const parts = String(p.device_code || "").split(":");
     if (parts.length !== 3 || parts[0] !== "pkce1" || !hexEqual(parts[1], stateHash)) return json(req, env, 200, { state: "bad_state" });

@@ -109,7 +109,7 @@
     wrong_account: "That was not the expected account. Nothing was saved. Press Connect again and sign in with the figures account.",
     expired: "The sign-in took longer than 10 minutes or was already used. Press Connect again.",
     bad_state: "This sign-in answer does not belong to a sign-in started here (or it was already used). Nothing was saved. Press Connect again.",
-    declined: "The sign-in was cancelled. Nothing was saved.",
+    declined: "The sign-in was cancelled. Nothing was saved. If Microsoft showed \"Need admin approval\" or any error page: STOP, do not grant anything, tell the lead.",
     needs_admin: "STOP: Microsoft asks for admin approval. Do not grant it. Nothing was saved. Tell the lead.",
     blocked_by_policy: "STOP: the organisation's sign-in rules refused this sign-in. Nothing was saved. Tell the lead.",
     needs_secret: "The app's return address is registered under the wrong platform. It must be under Mobile and desktop applications. Nothing was saved.",
