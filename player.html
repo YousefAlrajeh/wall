@@ -388,7 +388,8 @@ function canvasStart(){
     const fnBase=String(C.SUPA_URL).replace(/\/$/,"")+"/functions/v1/";
     const hdr={apikey:C.SUPA_KEY,Authorization:"Bearer "+C.SUPA_KEY};
     /* time from the read-only database function (REST API); the edge function `clock` only as fallback */
-    CANVAS.clock=WallClock.create({url:String(C.SUPA_URL).replace(/\/$/,"")+"/rest/v1/rpc/wall_now",fallbackUrl:fnBase+"clock",headers:hdr});
+    CANVAS.clock=WallClock.create({url:String(C.SUPA_URL).replace(/\/$/,"")+"/rest/v1/rpc/wall_now",fallbackUrl:fnBase+"clock",headers:hdr,
+      resyncSamples:3}); /* 8 at start, then 3 a minute (Free plan egress, builder_figs_free.md) */
     try{ await CANVAS.clock.start(); }catch(e){ CANVAS.err="CLOCK_UNREACHABLE"; }
     CANVAS.feed=WallFeed.create({url:fnBase+"wall-feed",anonKey:C.SUPA_KEY,screen:SCREEN,key:KEY,device:deviceSecret(),
       now:NOW,storage:safeStorage(),health:healthNow});
@@ -521,7 +522,7 @@ function identifyFlash(){ const d=document.getElementById("identify");
 
 /* ---------- boot ---------- */
 (async()=>{
-  await syncClock(); setInterval(syncClock, 10*60000);
+  await syncClock(); setInterval(()=>{ if(!CANVAS.on) syncClock(); }, 10*60000); /* canvasPages on: the shared clock replaces it (Free plan, builder_figs_free.md) */
   try{ await loadAll(); RELOAD_SEEN=+SETTINGS._reloadAt||0; /* the value this page started with */ }
   catch(e){ document.getElementById("keyerr").textContent="Cannot reach the wall database.\nCheck internet / setup."; 
     document.getElementById("keyerr").style.display="flex"; console.error(e); return; }
@@ -549,7 +550,8 @@ function identifyFlash(){ const d=document.getElementById("identify");
     if(b&&WHY) b.textContent="Waiting: "+WHY; },1500);
   /* safety net: realtime is the primary channel; this backup poll runs every 5 MINUTES
      and never when the tab is hidden — cuts database egress ~40x */
-  setInterval(()=>{ if(!document.hidden) loadAll().then(()=>{ if(reloadIfNewer()) return; if(SETTINGS.canvasPages===true||CANVAS.on) canvasCheck(); }).catch(()=>{}); },300000);
+  let BACKUP_TICK=0; /* canvasPages on: every 15 minutes (Free plan egress, builder_figs_free.md); switch off: every 5 minutes as before */
+  setInterval(()=>{ if(CANVAS.on&&(++BACKUP_TICK%3)) return; if(!document.hidden) loadAll().then(()=>{ if(reloadIfNewer()) return; if(SETTINGS.canvasPages===true||CANVAS.on) canvasCheck(); }).catch(()=>{}); },300000);
   /* DATA refresh: re-query visuals on every live embed (visible + warm) */
   const refMin=Math.max(5,(SETTINGS.autoRefreshMinutes||10));
   setInterval(()=>{ Object.values(pbiReports).forEach(r=>{ try{ r.refresh().catch(()=>{});}catch(e){} }); },refMin*60000);

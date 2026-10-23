@@ -1,6 +1,7 @@
 /* wall-clock.js - one shared clock for all 21 screens (used only when settings.data.canvasPages is on).
    Time source: the read-only database function rpc/wall_now (REST API, outside the edge-function quota);
-   the edge function `clock` is used only when that call fails.
+   the edge function `clock` is used only when that call fails, and then at most once every 10 minutes, doubling up to
+   once an hour while the database time keeps failing (Free plan function quota, builder_figs_free.md).
    Start: 8 samples; offset = server time - midpoint of send and receive.
    Every 60 s: 8 more samples. Samples are kept for 30 minutes; only those whose round trip is close to
    the smallest seen are trusted (a slow leg makes the midpoint wrong). A straight line through the
@@ -26,7 +27,9 @@
     var MAX_DRIFT = 500e-6;                      /* a PC clock is never trusted to be off by more than 500 ppm */
     var base = dateNow() - perfNow();
     var hist = [], pend = [], model = null, disp = 0, lastP = 0, synced = false;
-    var last = { rtt: null, samples: 0, failures: 0, trusted: 0, bySource: { main: 0, fallback: 0 } };
+    var last = { rtt: null, samples: 0, failures: 0, trusted: 0, fallbackSkipped: 0, bySource: { main: 0, fallback: 0 } };
+    var FB_MIN = opt.fallbackMinGapMs || 600000, FB_MAX = opt.fallbackMaxGapMs || 3600000; /* fallback cap and backoff */
+    var fbGap = FB_MIN, fbNext = -Infinity;
     var timer = null;
 
     function predict(p) { return model ? model.a + model.b * (p - model.pm) : 0; }
@@ -81,8 +84,14 @@
         });
     }
     function one() {
-      var p = from(opt.url, "main");
-      return opt.fallbackUrl ? p.then(null, function () { return from(opt.fallbackUrl, "fallback"); }) : p;
+      var p = from(opt.url, "main").then(function (s) { fbGap = FB_MIN; fbNext = -Infinity; return s; });
+      if (!opt.fallbackUrl) return p;
+      return p.then(null, function () {
+        var t = perfNow();
+        if (t < fbNext) { last.fallbackSkipped++; throw new Error("fallback capped"); }
+        fbNext = t + fbGap; fbGap = Math.min(fbGap * 2, FB_MAX);
+        return from(opt.fallbackUrl, "fallback");
+      });
     }
     function sample(n) {
       var i = 0, got = [];
@@ -131,7 +140,7 @@
     }
     function stats() {
       return { synced: synced, offsetMs: Math.round(currentOffset()), rttMs: last.rtt, samples: last.samples,
-        failures: last.failures, trusted: last.trusted, fromMain: last.bySource.main, fromFallback: last.bySource.fallback, driftPpm: model ? Math.round(model.b * 1e6) : 0 };
+        failures: last.failures, trusted: last.trusted, fromMain: last.bySource.main, fromFallback: last.bySource.fallback, fallbackSkipped: last.fallbackSkipped, driftPpm: model ? Math.round(model.b * 1e6) : 0 };
     }
     return { start: start, now: now, stats: stats, isSynced: function () { return synced; },
       resync: function () { return sample(N_RESYNC).then(apply); } };
