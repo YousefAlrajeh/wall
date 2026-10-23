@@ -10,7 +10,8 @@
 (function (root) {
   "use strict";
   var TZ_MIN = 180;            /* Riyadh, UTC+3 all year */
-  var APPLY_LAG_MS = 120000;   /* a new snapshot is shown at fetched_at + 2 min on every screen at once (screens poll every 60 s) */
+  var APPLY_LAG_MS = 360000;   /* a new snapshot is shown at fetched_at + 6 min on every screen at once (screens poll every
+                                  5 minutes, Free plan quota: one poll interval plus 1 minute for slow answers) */
 
   function pad(n) { return (n < 10 ? "0" : "") + n; }
   function hhmm(ms) { var d = new Date(ms + TZ_MIN * 60000); return pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes()); }
@@ -109,7 +110,7 @@
       S.REFRESH.t = refreshAt;
       info.builds++; info.version = snap ? snap.version | 0 : 0; info.appliedAt = ctx.now();
     }
-    /* a new snapshot: shown at the same wall time on every screen (fetched_at + 2 min); while nothing is shown yet, at once */
+    /* a new snapshot: shown at the same wall time on every screen (fetched_at + 6 min); while nothing is shown yet, at once */
     function check() {
       if (!alive) return;
       var snap = ctx.feed && ctx.mode !== "blank" ? ctx.feed.snapshot() : null, st = ctx.feed ? ctx.feed.status() : { hasData: false };

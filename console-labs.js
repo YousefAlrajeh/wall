@@ -130,9 +130,10 @@
       var c = h("div", { "class": "cell", style: "font-size:14px;cursor:default" });
       c.appendChild(h("b", {}, s));
       var age = x ? Math.round((Date.now() - Date.parse(x.last_seen)) / 1000) : null;
-      var line = !x ? "no report" : (age > 180 ? "silent " + Math.round(age / 60) + " min" : (x.state || "seen") + ", clock " + (x.clock_offset_ms == null ? "?" : "ok"));
+      /* screens report with each feed call, every 5 minutes: silent only after 7 minutes */
+      var line = !x ? "no report" : (age > 420 ? "silent " + Math.round(age / 60) + " min" : (x.state || "seen") + ", clock " + (x.clock_offset_ms == null ? "?" : "ok"));
       var d = h("div", { style: "font-size:14px" }, line);
-      if (!x || age > 180 || x.state === "stale" || x.error_code) d.style.color = AMBER;
+      if (!x || age > 420 || x.state === "stale" || x.error_code) d.style.color = AMBER;
       c.appendChild(d);
       grid.appendChild(c);
     });

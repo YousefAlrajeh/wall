@@ -1,5 +1,6 @@
 /* wall-feed-client.js - fetches the checked figures snapshot for this screen (canvasPages on only).
-   Every 60 s: POST {s,k,d,have,h} to the wall-feed function. Keeps the last good snapshot
+   Once at start (and so at every page load or reload), then every 5 minutes (Supabase Free plan function quota,
+   builder_figs_free.md): POST {s,k,d,have,h} to the wall-feed function. Keeps the last good snapshot
    (memory + this PC's browser storage), so an outage shows the last figures, not blanks.
    Also holds the "Data as of" / "No new data since" rule.
    Classic script: window.WallFeed in a browser, module.exports in Node. */
@@ -7,7 +8,9 @@
   "use strict";
   var REFRESH_HOURS = [7, 9, 11, 13, 15, 17, 19, 23]; /* model refreshes, Riyadh time */
   var TZ_MIN = 180;                                    /* Riyadh is UTC+3 all year */
-  var GRACE_MIN = 60;                                  /* refresh + figures job allowance */
+  var FEED_POLL_MS = 300000;                           /* one feed call every 5 minutes (was 60 s) */
+  var GRACE_MIN = 60 + FEED_POLL_MS / 60000;           /* 60 min refresh + figures job allowance, plus one poll interval,
+                                                          so the 5-minute polling alone can never make a screen stale */
   var MAX_BYTES = 65536;
   var SECRET_KEY_RE = /token|secret|password|authori[sz]ation|bearer|refresh|verifier|device_?code|api_?key|apikey|cookie|session/i;
 
@@ -78,7 +81,7 @@
         })
         .catch(function () { lastErr = "UNREACHABLE"; });
     }
-    function start() { if (!timer) timer = setIv(poll, o.intervalMs || 60000); return poll(); }
+    function start() { if (!timer) timer = setIv(poll, o.intervalMs || FEED_POLL_MS); return poll(); }
     function status() {
       var asOf = snap && snap.data_as_of ? Date.parse(snap.data_as_of) : NaN, t = now();
       return { version: snap ? snap.version : 0, hasData: isFinite(asOf), dataAsOfMs: asOf, sameDay: isFinite(asOf) && sameRiyadhDay(asOf, t),
@@ -90,6 +93,6 @@
       onChange: function (f) { listeners.push(f); return function () { var i = listeners.indexOf(f); if (i >= 0) listeners.splice(i, 1); }; } };
   }
   var F = { create: create, isStale: isStale, nextRefreshAfter: nextRefreshAfter, fmtAsOf: fmtAsOf,
-    REFRESH_HOURS: REFRESH_HOURS, TZ_MIN: TZ_MIN, GRACE_MIN: GRACE_MIN };
+    REFRESH_HOURS: REFRESH_HOURS, TZ_MIN: TZ_MIN, GRACE_MIN: GRACE_MIN, FEED_POLL_MS: FEED_POLL_MS };
   if (typeof module !== "undefined" && module.exports) module.exports = F; else root.WallFeed = F;
 })(this);
