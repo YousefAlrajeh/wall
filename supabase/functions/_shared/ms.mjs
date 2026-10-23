@@ -56,27 +56,44 @@ export async function refreshAccess(env, f, refreshToken) {
   return { ok: false, code: "TOKEN_REFRESH_FAILED" };
 }
 
-// One-time device sign-in, started by a console admin.
-export async function deviceStart(env, f) {
-  const r = await postForm(f, authUrl(env, "devicecode"), form(env, { scope: SCOPE }));
-  if (r.status !== 200 || !r.body.device_code || !r.body.user_code) return { ok: false, code: "DEVICE_START_FAILED" };
-  return {
-    ok: true, deviceCode: r.body.device_code, userCode: String(r.body.user_code).slice(0, 16),
-    verificationUri: "https://microsoft.com/devicelogin",
-    expiresIn: Math.min(+r.body.expires_in || 900, 900), interval: Math.max(+r.body.interval || 5, 5),
-  };
+// One-time BROWSER sign-in (authorization code + PKCE), started by a console admin (G4b; the device-code flow it
+// replaces was refused by the tenant's Conditional Access). The browser goes to Microsoft and comes back to the one fixed
+// console address; the code is exchanged here, on the server, with the verifier that never left the server.
+// Public client (D-228): no client secret is sent; the redirect address is registered on HMG Wall Reader under the
+// platform "Mobile and desktop applications".
+export const READER_REDIRECT_DEFAULT = "https://yousefalrajeh.github.io/wall/console.html";
+const REDIRECT_RE = /^https:\/\/[a-z0-9.-]+(:\d{1,5})?\/[A-Za-z0-9._~\/-]{0,200}$/;
+// The one address Microsoft may send the browser back to. Never taken from the request (no open redirect): the default
+// above, or the function secret WALL_READER_REDIRECT_URI, and only if its origin is one of WALL_ALLOWED_ORIGINS.
+export function readerRedirect(env, allowedOrigins) {
+  const r = String(env.WALL_READER_REDIRECT_URI || READER_REDIRECT_DEFAULT);
+  if (!REDIRECT_RE.test(r)) return null;
+  const origin = r.replace(/^(https:\/\/[^/]+).*$/, "$1");
+  return (allowedOrigins || []).includes(origin) ? r : null;
 }
-export async function devicePoll(env, f, deviceCode) {
-  const r = await postForm(f, authUrl(env, "token"), form(env, { grant_type: "urn:ietf:params:oauth:grant-type:device_code", device_code: deviceCode }));
-  if (r.status === 200 && r.body.access_token && r.body.refresh_token) {
-    return { state: "tokens", access: r.body.access_token, refresh: r.body.refresh_token, idToken: r.body.id_token || null };
-  }
-  const e = r.body.error;
-  if (e === "authorization_pending") return { state: "waiting" };
-  if (e === "slow_down") return { state: "waiting", slowDown: true };
-  if (e === "expired_token" || e === "code_expired") return { state: "expired" };
-  if (e === "authorization_declined" || e === "access_denied") return { state: "declined" };
-  return { state: "failed" };
+export function authorizeUrl(env, redirect, state, challenge) {
+  return authUrl(env, "authorize") + "?" + new URLSearchParams({
+    client_id: env.WALL_READER_CLIENT_ID, response_type: "code", response_mode: "query", redirect_uri: redirect,
+    scope: SCOPE, state, code_challenge: challenge, code_challenge_method: "S256", prompt: "select_account",
+  }).toString();
+}
+// Exchanges the code. Returns {ok, access, refresh} or {ok:false, code} with a short code only (never Microsoft's text).
+export async function exchangeCode(env, f, code, verifier, redirect) {
+  const r = await postForm(f, authUrl(env, "token"), form(env, { grant_type: "authorization_code", code, code_verifier: verifier, redirect_uri: redirect, scope: SCOPE }));
+  if (r.status === 200 && r.body.access_token && r.body.refresh_token) return { ok: true, access: r.body.access_token, refresh: r.body.refresh_token };
+  return { ok: false, code: tokenErrorCode(r.body) };
+}
+// Microsoft error -> short code. AADSTS numbers are read from the error text only to pick the code; the text is dropped.
+export function tokenErrorCode(b) {
+  const d = String((b && (b.error_description || "")) || "") + " " + String((b && b.error_codes && b.error_codes.join(" ")) || "");
+  const e = String((b && b.error) || "");
+  if (/AADSTS65001|AADSTS90094|AADSTS90008/.test(d) || e === "consent_required") return "needs_admin";
+  if (/AADSTS53\d{3}/.test(d)) return "blocked_by_policy";
+  if (/AADSTS7000218/.test(d)) return "needs_secret";
+  if (/AADSTS50011|AADSTS500113/.test(d)) return "redirect_not_registered";
+  if (/AADSTS70008|AADSTS54005/.test(d) || e === "invalid_grant") return "expired";
+  if (e === "access_denied") return "declined";
+  return "failed";
 }
 
 // Decodes the claims part of a token received straight from Microsoft over TLS.

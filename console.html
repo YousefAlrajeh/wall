@@ -236,6 +236,13 @@ async function load(){
   render();
 }
 window.load=load;
+/* G4b: back from the figures-account sign-in (state "wr."): runs as the page loads, before the Microsoft box's own return
+   handler further down. The answer is taken out of the address bar at once and the labs box is opened, which hands it on. */
+{ const q=new URLSearchParams(location.search), st=q.get("state")||"";
+  if(/^wr\.[A-Za-z0-9_-]{43}$/.test(st)){
+    const e=q.get("error"), d=(q.get("error_description")||"").match(/AADSTS(\d{4,7})/g)||[];
+    window.WALL_SIGNIN_RETURN={state:st, code:q.get("code")||"", error:e?String(e).slice(0,40):null, errorCodes:d.map(x=>x.slice(6)).join(" ")};
+    history.replaceState({},"",location.pathname+"?labs=1"); } }
 function boot(){ rotTx.innerHTML=txOpts("fade"); load();
   for(const s2 of screens){ const o=document.createElement("option"); o.value=s2; o.textContent=s2; enScr.appendChild(o); }
   enrolList();
@@ -594,7 +601,7 @@ window.msAuth=async()=>{ /* normal browser sign-in (authorization code + PKCE) â
 (async function msRedeem(){ /* returning from Microsoft with ?code= */
   const p=new URLSearchParams(location.search);
   const code=p.get("code");
-  if(!code) return;
+  if(!code||window.WALL_SIGNIN_RETURN) return; /* G4b: a figures-account answer is not this sign-in */
   history.replaceState({},"",location.pathname); /* clean the address bar */
   const v=sessionStorage.getItem("pkce_v"), ruri=sessionStorage.getItem("pkce_r");
   if(!v){ alert("Sign-in returned but the session was lost â€” click Authorize again."); return; }
