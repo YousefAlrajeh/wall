@@ -208,7 +208,7 @@ function consoleClock(){ if(CCLOCK||!canvasOn()) return;
   const s=document.createElement("script"); s.src="wall-clock.js";
   s.onload=()=>{ const c=WallClock.create({url:String(C.SUPA_URL).replace(/\/$/,"")+"/rest/v1/rpc/wall_now",
       fallbackUrl:String(C.SUPA_URL).replace(/\/$/,"")+"/functions/v1/clock",
-      headers:{apikey:C.SUPA_KEY,Authorization:"Bearer "+C.SUPA_KEY},resyncSamples:3}); /* 8 at start, then 3 a minute, as the screens (Free plan egress) */
+      headers:{apikey:C.SUPA_KEY,Authorization:"Bearer "+C.SUPA_KEY},resyncSamples:2,resyncMs:120000}); /* 8 at start, then 2 every 2 minutes, as the screens */
     c.start().then(()=>{CCLOCK=c;}).catch(()=>{}); };
   document.head.appendChild(s); }
 window.ST_settings=()=>ST.settings; /* read-only view for console-labs.js */

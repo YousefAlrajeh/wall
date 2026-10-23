@@ -10,6 +10,9 @@
   var TZ_MIN = 180;                                    /* Riyadh is UTC+3 all year */
   var FEED_POLL_MS = 300000;                           /* one feed call every 5 minutes (was 60 s) */
   var RETRY_MS = 30000;                                /* after a failed call: one quick retry (checker_figs2 M1) */
+  var CALL_TIMEOUT_MS = 20000;                         /* a call with no answer after 20 s is stopped and counts as failed, so
+                                                          20 s + 30 s + the retry's round trip stays inside the 60 s margin
+                                                          before the shared switch time (checker_figs3b M1) */
   var RETRY_GAP_MS = 3600000;                          /* at most one retry an hour: the Free plan call budget holds even
                                                           if every scheduled call failed and every retry worked */
   var GRACE_MIN = 60 + FEED_POLL_MS / 60000 + 1;       /* 60 min refresh + figures job allowance, plus one poll interval and
@@ -61,6 +64,8 @@
     var store = o.storage || null, SKEY = "wallFeed.v1." + o.screen;
     var setIv = o.setInterval || function (f, ms) { return root.setInterval(f, ms); };
     var setTo = o.setTimeout || function (f, ms) { return root.setTimeout(f, ms); };
+    var clrTo = o.clearTimeout || function (h) { return root.clearTimeout(h); };
+    var AC = o.AbortController || root.AbortController || null;
     /* a failed call (server error, time-out, network) is retried once after 30 s; not again until a call succeeds, and at most
        once an hour, so a long outage costs at most one extra call an hour. A refusal (401) is not retried. */
     var retryArmed = true, lastRetry = -Infinity;
@@ -78,8 +83,17 @@
       var body = { s: o.screen, k: o.key, d: o.device || "", have: snap ? snap.version : 0, h: o.health ? o.health() : null };
       var hdr = { "Content-Type": "application/json" };
       if (o.anonKey) { hdr.apikey = o.anonKey; hdr.Authorization = "Bearer " + o.anonKey; }
-      return Promise.resolve(doFetch(o.url, { method: "POST", headers: hdr, body: JSON.stringify(body), cache: "no-store" }))
+      var ac = AC ? new AC() : null, timedOut = false;
+      var tm = setTo(function () {                    /* no answer after 20 s: stop it, count it as failed now */
+        timedOut = true; if (ac) { try { ac.abort(); } catch (e) { } }
+        lastErr = "TIMEOUT"; failed();
+      }, CALL_TIMEOUT_MS);
+      var req = { method: "POST", headers: hdr, body: JSON.stringify(body), cache: "no-store" };
+      if (ac) req.signal = ac.signal;
+      return Promise.resolve(doFetch(o.url, req))
         .then(function (r) {
+          clrTo(tm);
+          if (timedOut) throw new Error("timeout");     /* an answer after the time-out is ignored: the call already failed */
           if (r.status === 401) { denied = true; lastErr = "DENIED"; emit(); return; }
           if (!r.ok) { lastErr = "HTTP_" + r.status; failed(); return; }
           return r.text().then(function (t) {
@@ -92,7 +106,7 @@
             emit();
           });
         })
-        .catch(function () { lastErr = "UNREACHABLE"; failed(); });
+        .catch(function () { clrTo(tm); if (timedOut) return; lastErr = "UNREACHABLE"; failed(); });
     }
     function start() { if (!timer) timer = setIv(poll, o.intervalMs || FEED_POLL_MS); return poll(); }
     function status() {
@@ -106,6 +120,6 @@
       onChange: function (f) { listeners.push(f); return function () { var i = listeners.indexOf(f); if (i >= 0) listeners.splice(i, 1); }; } };
   }
   var F = { create: create, isStale: isStale, nextRefreshAfter: nextRefreshAfter, fmtAsOf: fmtAsOf,
-    REFRESH_HOURS: REFRESH_HOURS, TZ_MIN: TZ_MIN, GRACE_MIN: GRACE_MIN, FEED_POLL_MS: FEED_POLL_MS, RETRY_MS: RETRY_MS, RETRY_GAP_MS: RETRY_GAP_MS };
+    REFRESH_HOURS: REFRESH_HOURS, TZ_MIN: TZ_MIN, GRACE_MIN: GRACE_MIN, FEED_POLL_MS: FEED_POLL_MS, RETRY_MS: RETRY_MS, RETRY_GAP_MS: RETRY_GAP_MS, CALL_TIMEOUT_MS: CALL_TIMEOUT_MS };
   if (typeof module !== "undefined" && module.exports) module.exports = F; else root.WallFeed = F;
 })(this);

@@ -93,6 +93,8 @@ export function tokenErrorCode(b) {
   if (/AADSTS50011|AADSTS500113/.test(d)) return "redirect_not_registered";
   if (/AADSTS70008|AADSTS54005/.test(d) || e === "invalid_grant") return "expired";
   if (e === "access_denied") return "declined";
+  // refusals for this app or account that a new try will not fix: STOP (checker_figs_g4b2 L7)
+  if (/AADSTS50105|AADSTS700016|AADSTS650057|AADSTS50020|AADSTS50034/.test(d) || e === "interaction_required" || e === "unauthorized_client" || e === "invalid_client") return "refused";
   return "failed";
 }
 

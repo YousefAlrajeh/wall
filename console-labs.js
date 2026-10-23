@@ -70,6 +70,10 @@
   var grid = h("div", { "class": "wallgrid" });
   box.appendChild(grid);
 
+  /* operating rules, shown while wall pages are being set up (checker_figs3b M3): they keep the Free plan budget */
+  box.appendChild(h("div", { style: "margin-top:10px;font-size:14px" },
+    "Rules while wall pages are on: close this console when you are done (it keeps a clock running while open), and do not open the monitoring view (wall.html): it starts 21 more screens."));
+
   document.querySelector(".grid").appendChild(box);
 
   function paintSettings() {
@@ -115,7 +119,8 @@
     needs_secret: "The app's return address is registered under the wrong platform. It must be under Mobile and desktop applications. Nothing was saved.",
     redirect_not_registered: "The return address is not registered on HMG Wall Reader yet (plan step G4a). Nothing was saved.",
     not_configured: "The figures account is not set up on the server yet.",
-    failed: "The sign-in did not work. Nothing was saved. Press Connect again." };
+    refused: "STOP: Microsoft refused this sign-in for this app or account. Nothing was saved. Do not grant anything. Tell the lead.",
+    failed: "The sign-in did not work. Nothing was saved. You may press Connect once more; if it happens again, STOP and tell the lead." };
   function showSignin(st) { codeLine.textContent = SIGNIN_MSG[st] || SIGNIN_MSG.failed; codeLine.style.color = st === "done" ? "" : AMBER; accStatus(); }
   conn.onclick = async function () {
     try {

@@ -235,6 +235,15 @@ async function embedPbi(b,cmd,onRendered){
   });
   return rep;
 }
+/* Report-token retries back off (checker_figs3b H1): a screen that is not set up, or that lost its secret, is refused by
+   the token function on every try. The pause before the next try doubles from 8 s to at most 15 minutes, goes back to
+   8 s after a report loads, and is kept in this PC's storage so a reload does not start again at 8 s. A screen whose
+   reports load never fails, so it makes exactly the same requests as before. */
+const TB_KEY="wallTokenBackoff."+SCREEN+(qs.get("mirror")==="1"?".mirror":"");
+let TOKEN_FAILS=(()=>{ try{ const st=safeStorage(); const n=st?parseInt(st.getItem(TB_KEY)||"0",10):0; return (n>=0&&n<=20)?n:0; }catch(e){ return 0; } })();
+function tokenFailed(){ TOKEN_FAILS=Math.min(TOKEN_FAILS+1,20); try{ const st=safeStorage(); if(st) st.setItem(TB_KEY,String(TOKEN_FAILS)); }catch(e){}
+  return Math.min(8000*Math.pow(2,TOKEN_FAILS-1),900000); }
+function tokenWorked(){ if(!TOKEN_FAILS) return; TOKEN_FAILS=0; try{ const st=safeStorage(); if(st) st.removeItem(TB_KEY); }catch(e){} }
 function show(cmd){
   const g=++gen; lastCmd=cmd;
   if(cmd.url===currentUrl && !cmd.force) return;
@@ -265,7 +274,7 @@ function coldLoad(cmd,g){
     embedPbi(back,cmd,()=>{ if(settled||g!==gen)return; settled=true;
       WARM[back.id]={url:cmd.url}; WARMLOADING[back.id]=null;
       after(Math.min(cmd.settleMs||3000,3000),()=>runEffect(cmd,g));
-    }).catch(e=>{console.error(e); if(g===gen) after(8000,()=>{currentUrl=null;show(cmd);});});
+    }).then(()=>tokenWorked(),e=>{console.error(e); const d=tokenFailed(); if(g===gen) after(d,()=>{currentUrl=null;show(cmd);});});
     after(45000,()=>{ if(!settled&&g===gen){settled=true;runEffect(cmd,g);} });
   }else{
     const t=back.ifr; back.pbi.style.display="none"; t.style.display="block";
@@ -389,7 +398,7 @@ function canvasStart(){
     const hdr={apikey:C.SUPA_KEY,Authorization:"Bearer "+C.SUPA_KEY};
     /* time from the read-only database function (REST API); the edge function `clock` only as fallback */
     CANVAS.clock=WallClock.create({url:String(C.SUPA_URL).replace(/\/$/,"")+"/rest/v1/rpc/wall_now",fallbackUrl:fnBase+"clock",headers:hdr,
-      resyncSamples:3}); /* 8 at start, then 3 a minute (Free plan egress, builder_figs_free.md) */
+      resyncSamples:2,resyncMs:120000}); /* 8 at start, then 2 every 2 minutes (user decision 24 Oct: Free plan egress and log lines) */
     try{ await CANVAS.clock.start(); }catch(e){ CANVAS.err="CLOCK_UNREACHABLE"; }
     CANVAS.feed=WallFeed.create({url:fnBase+"wall-feed",anonKey:C.SUPA_KEY,screen:SCREEN,key:KEY,device:deviceSecret(),
       now:NOW,storage:safeStorage(),health:healthNow});
