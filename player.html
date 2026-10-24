@@ -236,11 +236,15 @@ async function embedPbi(b,cmd,onRendered){
   return rep;
 }
 /* Report-token requests back off (checker_figs3b H1): a screen that is not set up, or that lost its secret, is refused by
-   the token function on every try. After a refusal, EVERY path that asks for a report token (rotation steps, mounts,
+   the token function on every try ("not_enrolled": the token function gives that answer both for a PC that was never set
+   up and for one whose stored secret is lost or wrong). After THAT refusal, and only that one, EVERY path that asks for
+   a report token (rotation steps, mounts,
    warm-up, retries, renewals, reloads) shares one pause: it doubles from 8 s to at most 15 minutes, goes back to nothing
    after a token is given, and is kept in this PC's storage so a reload does not start again at 8 s. While paused, at most
-   one token request is in flight; the others wait for it and then see the pause. A screen whose tokens are given never
-   fails, so it takes exactly the same path and makes exactly the same requests as before. */
+   one token request is in flight; the others wait for it and then see the pause. Every other error (network, busy,
+   re-authorise, wrong account, server error) never starts or extends the pause: it takes exactly the old path (retry after
+   8 s, the old report stays), checker_figs_r4screens R4-H1. A set-up screen is never refused, so it takes exactly the same
+   path and makes exactly the same requests as before. */
 const TB_KEY="wallTokenBackoff."+SCREEN+(qs.get("mirror")==="1"?".mirror":"");
 let TOKEN_FAILS=(()=>{ try{ const st=safeStorage(); const n=st?parseInt(st.getItem(TB_KEY)||"0",10):0; return (n>=0&&n<=20)?n:0; }catch(e){ return 0; } })();
 let TOKEN_NEXT=0, TOKEN_INFLIGHT=null;
@@ -248,13 +252,14 @@ function tokenFailed(){ TOKEN_FAILS=Math.min(TOKEN_FAILS+1,20); try{ const st=sa
   const d=Math.min(8000*Math.pow(2,TOKEN_FAILS-1),900000); TOKEN_NEXT=Date.now()+d; return d; }
 function tokenWorked(){ if(!TOKEN_FAILS) return; TOKEN_FAILS=0; TOKEN_NEXT=0; try{ const st=safeStorage(); if(st) st.removeItem(TB_KEY); }catch(e){} }
 function tokenWait(){ return Math.max(8000,TOKEN_NEXT-Date.now()); }
+function tokenRefused(e){ return !!e&&e.message==="not_enrolled"; }  /* the only error that pauses */
 async function tokenConfig(contentId,fresh){
-  if(!TOKEN_FAILS) return tokenConfigNet(contentId,fresh).catch(e=>{ tokenFailed(); throw e; });   /* no refusal yet: exactly as before */
+  if(!TOKEN_FAILS) return tokenConfigNet(contentId,fresh).catch(e=>{ if(tokenRefused(e)) tokenFailed(); throw e; });   /* no refusal yet: exactly as before */
   if(TOKEN_INFLIGHT){ try{ await TOKEN_INFLIGHT; }catch(e){} }
   if(TOKEN_FAILS&&Date.now()<TOKEN_NEXT) throw new Error("token_backoff");                          /* paused: no request */
   const p=tokenConfigNet(contentId,fresh); TOKEN_INFLIGHT=p;
   try{ const j=await p; tokenWorked(); return j; }
-  catch(e){ tokenFailed(); throw e; }
+  catch(e){ if(tokenRefused(e)) tokenFailed(); throw e; }
   finally{ if(TOKEN_INFLIGHT===p) TOKEN_INFLIGHT=null; }
 }
 function show(cmd){
