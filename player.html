@@ -402,7 +402,9 @@ function canvasStart(){
     try{ await CANVAS.clock.start(); }catch(e){ CANVAS.err="CLOCK_UNREACHABLE"; }
     CANVAS.feed=WallFeed.create({url:fnBase+"wall-feed",anonKey:C.SUPA_KEY,screen:SCREEN,key:KEY,device:deviceSecret(),
       now:NOW,storage:safeStorage(),health:healthNow});
-    CANVAS.feed.start();
+    /* a monitoring mirror (wall.html) has no screen secret: the feed would refuse every call, and each refused call still
+       counts against the Free plan, so a mirror does not ask (checker_figs3b M3) */
+    if(!(qs.get("mirror")==="1"&&!DEVICE)) CANVAS.feed.start();
   })();
   return CANVAS.ready;
 }
