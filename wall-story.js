@@ -10,7 +10,8 @@
 (function (root) {
   "use strict";
   var TZ_MIN = 180;            /* Riyadh, UTC+3 all year */
-  var APPLY_LAG_MS = 120000;   /* a new snapshot is shown at fetched_at + 2 min on every screen at once (screens poll every 60 s) */
+  var APPLY_LAG_MS = 360000;   /* a new snapshot is shown at fetched_at + 6 min on every screen at once (screens poll every
+                                  5 minutes, Free plan quota: one poll interval plus 1 minute for slow answers) */
 
   function pad(n) { return (n < 10 ? "0" : "") + n; }
   function hhmm(ms) { var d = new Date(ms + TZ_MIN * 60000); return pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes()); }
@@ -109,7 +110,7 @@
       S.REFRESH.t = refreshAt;
       info.builds++; info.version = snap ? snap.version | 0 : 0; info.appliedAt = ctx.now();
     }
-    /* a new snapshot: shown at the same wall time on every screen (fetched_at + 2 min); while nothing is shown yet, at once */
+    /* a new snapshot: shown at the same wall time on every screen (fetched_at + 6 min); while nothing is shown yet, at once */
     function check() {
       if (!alive) return;
       var snap = ctx.feed && ctx.mode !== "blank" ? ctx.feed.snapshot() : null, st = ctx.feed ? ctx.feed.status() : { hasData: false };
@@ -117,7 +118,8 @@
       if (v !== shown.version) {
         var at = snap && snap.fetched_at ? Date.parse(snap.fetched_at) + APPLY_LAG_MS : NaN;
         var first = shown.version <= 0;   /* nothing shown yet (start, or no data before): show it at once, without the count-up */
-        if (first || !isFinite(at) || nowMs >= at) { build(snap, first || !isFinite(at) ? -1e9 : at / 1000); shown.version = v; info.applied++; }
+        if (first || !isFinite(at) || nowMs >= at) { build(snap, first || !isFinite(at) ? -1e9 : at / 1000); shown.version = v; info.applied++; shown.pendingAt = null; }
+        else shown.pendingAt = at;   /* frame() applies it on the first frame at or after this wall time (checker_figs2 L2) */
       }
       view.stale = !!(st && st.stale);
       view.nodata = ctx.mode === "blank" ? false : !(snap && st.hasData);
@@ -130,6 +132,7 @@
     function frame() {
       if (!alive || !g) return;
       var t0 = (root.performance && root.performance.now) ? root.performance.now() : Date.now();
+      if (shown.pendingAt != null && ctx.now() >= shown.pendingAt) check();   /* the switch lands on a frame, not on the 1 s tick */
       var B = L.bezelPx, w = L.windowFor(screen, B), T = ctx.now() / 1000, cyc = S.cycleLen(), t = ((T % cyc) + cyc) % cyc;
       g.setTransform(1, 0, 0, 1, -w.x, -w.y);
       g.save(); g.beginPath(); g.rect(w.x, w.y, L.SCREEN_W, L.SCREEN_H); g.clip();

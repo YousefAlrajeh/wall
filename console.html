@@ -208,7 +208,7 @@ function consoleClock(){ if(CCLOCK||!canvasOn()) return;
   const s=document.createElement("script"); s.src="wall-clock.js";
   s.onload=()=>{ const c=WallClock.create({url:String(C.SUPA_URL).replace(/\/$/,"")+"/rest/v1/rpc/wall_now",
       fallbackUrl:String(C.SUPA_URL).replace(/\/$/,"")+"/functions/v1/clock",
-      headers:{apikey:C.SUPA_KEY,Authorization:"Bearer "+C.SUPA_KEY}});
+      headers:{apikey:C.SUPA_KEY,Authorization:"Bearer "+C.SUPA_KEY},resyncSamples:2,resyncMs:120000}); /* 8 at start, then 2 every 2 minutes, as the screens */
     c.start().then(()=>{CCLOCK=c;}).catch(()=>{}); };
   document.head.appendChild(s); }
 window.ST_settings=()=>ST.settings; /* read-only view for console-labs.js */
@@ -236,12 +236,20 @@ async function load(){
   render();
 }
 window.load=load;
+/* G4b: back from the figures-account sign-in (state "wr."): runs as the page loads, before the Microsoft box's own return
+   handler further down. The answer is taken out of the address bar at once and the labs box is opened, which hands it on. */
+{ const q=new URLSearchParams(location.search), st=q.get("state")||"";
+  if(/^wr\.[A-Za-z0-9_-]{43}$/.test(st)){
+    const e=q.get("error"), d=(q.get("error_description")||"").match(/AADSTS(\d{4,7})/g)||[];
+    window.WALL_SIGNIN_RETURN={state:st, code:q.get("code")||"", error:e?String(e).slice(0,40):null, errorCodes:d.map(x=>x.slice(6)).join(" ")};
+    history.replaceState({},"",location.pathname+"?labs=1"); } }
 function boot(){ rotTx.innerHTML=txOpts("fade"); load();
   for(const s2 of screens){ const o=document.createElement("option"); o.value=s2; o.textContent=s2; enScr.appendChild(o); }
   enrolList();
   if(new URLSearchParams(location.search).get("labs")==="1"){ /* wall pages setup box, admins only, hidden otherwise */
     const s=document.createElement("script"); s.src="console-labs.js"; document.head.appendChild(s); }
-  setInterval(()=>{ if(!document.hidden) load(); },30000); /* light poll; actions refresh instantly anyway */
+  let LOAD_TICK=0; /* canvasPages on: every 2 minutes (Free plan egress, builder_figs3b.md); switch off: every 30 s as before */
+  setInterval(()=>{ if(canvasOn()&&(++LOAD_TICK%4)) return; if(!document.hidden) load(); },30000); /* light poll; actions refresh instantly anyway */
   paintLinks(); setInterval(rotPaint,1000); }
 
 /* ---------- render ---------- */
@@ -593,7 +601,7 @@ window.msAuth=async()=>{ /* normal browser sign-in (authorization code + PKCE) â
 (async function msRedeem(){ /* returning from Microsoft with ?code= */
   const p=new URLSearchParams(location.search);
   const code=p.get("code");
-  if(!code) return;
+  if(!code||window.WALL_SIGNIN_RETURN) return; /* G4b: a figures-account answer is not this sign-in */
   history.replaceState({},"",location.pathname); /* clean the address bar */
   const v=sessionStorage.getItem("pkce_v"), ruri=sessionStorage.getItem("pkce_r");
   if(!v){ alert("Sign-in returned but the session was lost â€” click Authorize again."); return; }

@@ -194,7 +194,7 @@ function runEffect(cmd,g){
 /* text/plain keeps it a simple request: no extra preflight call per token request */
 function tokenPost(body){ return fetch(C.TOKEN_FN,{method:"POST",headers:{"Content-Type":"text/plain"},body:JSON.stringify(body)}); }
 function tokenGet(contentId,fresh){ return fetch(C.TOKEN_FN+"?content="+encodeURIComponent(contentId)+"&k="+encodeURIComponent(KEY)+(fresh?"&fresh=1":"")); }
-async function tokenConfig(contentId,fresh){
+async function tokenConfigNet(contentId,fresh){
   const viaGet=LEGACY_FN; /* decide by the form THIS request used (the background check may switch it meanwhile) */
   let r = viaGet ? await tokenGet(contentId,fresh) : await tokenPost({content:contentId,s:SCREEN,k:KEY,d:DEVICE,fresh:!!fresh});
   let j=null; try{ j=await r.json(); }catch(e){}
@@ -235,6 +235,34 @@ async function embedPbi(b,cmd,onRendered){
   });
   return rep;
 }
+/* Report-token requests back off (checker_figs3b H1): a screen that is not set up, or that lost its secret, is refused by
+   the token function on every try ("not_enrolled": the token function gives that answer both for a PC that was never set
+   up and for one whose stored secret is lost or wrong). After THAT refusal, and only that one, EVERY path that asks for
+   a report token (rotation steps, mounts,
+   warm-up, retries, renewals, reloads) shares one pause: it doubles from 8 s to at most 15 minutes, goes back to nothing
+   after a token is given, and is kept in this PC's storage so a reload does not start again at 8 s. While paused, at most
+   one token request is in flight; the others wait for it and then see the pause. Every other error (network, busy,
+   re-authorise, wrong account, server error) never starts or grows the pause: it takes exactly the old path (retry after
+   8 s, the old report stays), checker_figs_r4screens R4-H1. A set-up screen is never refused, so it takes exactly the same
+   path and makes exactly the same requests as before. Only while a pause is already running (a PC not set up), such an
+   error starts the same pause again at its current length, so the waiting requests do not all go at once (R5-M1). */
+const TB_KEY="wallTokenBackoff."+SCREEN+(qs.get("mirror")==="1"?".mirror":"");
+let TOKEN_FAILS=(()=>{ try{ const st=safeStorage(); const n=st?parseInt(st.getItem(TB_KEY)||"0",10):0; return (n>=0&&n<=20)?n:0; }catch(e){ return 0; } })();
+let TOKEN_NEXT=0, TOKEN_INFLIGHT=null;
+function tokenFailed(){ TOKEN_FAILS=Math.min(TOKEN_FAILS+1,20); try{ const st=safeStorage(); if(st) st.setItem(TB_KEY,String(TOKEN_FAILS)); }catch(e){}
+  const d=Math.min(8000*Math.pow(2,TOKEN_FAILS-1),900000); TOKEN_NEXT=Date.now()+d; return d; }
+function tokenWorked(){ if(!TOKEN_FAILS) return; TOKEN_FAILS=0; TOKEN_NEXT=0; try{ const st=safeStorage(); if(st) st.removeItem(TB_KEY); }catch(e){} }
+function tokenWait(){ return Math.max(8000,TOKEN_NEXT-Date.now()); }
+function tokenRefused(e){ return !!e&&e.message==="not_enrolled"; }  /* the only error that pauses */
+async function tokenConfig(contentId,fresh){
+  if(!TOKEN_FAILS) return tokenConfigNet(contentId,fresh).catch(e=>{ if(tokenRefused(e)) tokenFailed(); throw e; });   /* no refusal yet: exactly as before */
+  if(TOKEN_INFLIGHT){ try{ await TOKEN_INFLIGHT; }catch(e){} }
+  if(TOKEN_FAILS&&Date.now()<TOKEN_NEXT) throw new Error("token_backoff");                          /* paused: no request */
+  const p=tokenConfigNet(contentId,fresh); TOKEN_INFLIGHT=p;
+  try{ const j=await p; tokenWorked(); return j; }
+  catch(e){ if(tokenRefused(e)) tokenFailed(); else TOKEN_NEXT=Date.now()+Math.min(8000*Math.pow(2,TOKEN_FAILS-1),900000); throw e; }
+  finally{ if(TOKEN_INFLIGHT===p) TOKEN_INFLIGHT=null; }
+}
 function show(cmd){
   const g=++gen; lastCmd=cmd;
   if(cmd.url===currentUrl && !cmd.force) return;
@@ -265,7 +293,7 @@ function coldLoad(cmd,g){
     embedPbi(back,cmd,()=>{ if(settled||g!==gen)return; settled=true;
       WARM[back.id]={url:cmd.url}; WARMLOADING[back.id]=null;
       after(Math.min(cmd.settleMs||3000,3000),()=>runEffect(cmd,g));
-    }).catch(e=>{console.error(e); if(g===gen) after(8000,()=>{currentUrl=null;show(cmd);});});
+    }).catch(e=>{console.error(e); if(g===gen) after(TOKEN_FAILS?tokenWait():8000,()=>{currentUrl=null;show(cmd);});});
     after(45000,()=>{ if(!settled&&g===gen){settled=true;runEffect(cmd,g);} });
   }else{
     const t=back.ifr; back.pbi.style.display="none"; t.style.display="block";
@@ -388,11 +416,14 @@ function canvasStart(){
     const fnBase=String(C.SUPA_URL).replace(/\/$/,"")+"/functions/v1/";
     const hdr={apikey:C.SUPA_KEY,Authorization:"Bearer "+C.SUPA_KEY};
     /* time from the read-only database function (REST API); the edge function `clock` only as fallback */
-    CANVAS.clock=WallClock.create({url:String(C.SUPA_URL).replace(/\/$/,"")+"/rest/v1/rpc/wall_now",fallbackUrl:fnBase+"clock",headers:hdr});
+    CANVAS.clock=WallClock.create({url:String(C.SUPA_URL).replace(/\/$/,"")+"/rest/v1/rpc/wall_now",fallbackUrl:fnBase+"clock",headers:hdr,
+      resyncSamples:2,resyncMs:120000}); /* 8 at start, then 2 every 2 minutes (user decision 24 Oct: Free plan egress and log lines) */
     try{ await CANVAS.clock.start(); }catch(e){ CANVAS.err="CLOCK_UNREACHABLE"; }
     CANVAS.feed=WallFeed.create({url:fnBase+"wall-feed",anonKey:C.SUPA_KEY,screen:SCREEN,key:KEY,device:deviceSecret(),
       now:NOW,storage:safeStorage(),health:healthNow});
-    CANVAS.feed.start();
+    /* a monitoring mirror (wall.html) has no screen secret: the feed would refuse every call, and each refused call still
+       counts against the Free plan, so a mirror does not ask (checker_figs3b M3) */
+    if(!(qs.get("mirror")==="1"&&!DEVICE)) CANVAS.feed.start();
   })();
   return CANVAS.ready;
 }
@@ -521,7 +552,7 @@ function identifyFlash(){ const d=document.getElementById("identify");
 
 /* ---------- boot ---------- */
 (async()=>{
-  await syncClock(); setInterval(syncClock, 10*60000);
+  await syncClock(); setInterval(()=>{ if(!CANVAS.on) syncClock(); }, 10*60000); /* canvasPages on: the shared clock replaces it (Free plan, builder_figs_free.md) */
   try{ await loadAll(); RELOAD_SEEN=+SETTINGS._reloadAt||0; /* the value this page started with */ }
   catch(e){ document.getElementById("keyerr").textContent="Cannot reach the wall database.\nCheck internet / setup."; 
     document.getElementById("keyerr").style.display="flex"; console.error(e); return; }
@@ -549,7 +580,8 @@ function identifyFlash(){ const d=document.getElementById("identify");
     if(b&&WHY) b.textContent="Waiting: "+WHY; },1500);
   /* safety net: realtime is the primary channel; this backup poll runs every 5 MINUTES
      and never when the tab is hidden — cuts database egress ~40x */
-  setInterval(()=>{ if(!document.hidden) loadAll().then(()=>{ if(reloadIfNewer()) return; if(SETTINGS.canvasPages===true||CANVAS.on) canvasCheck(); }).catch(()=>{}); },300000);
+  let BACKUP_TICK=0; /* canvasPages on: every 30 minutes (Free plan egress, builder_figs3b.md); switch off: every 5 minutes as before */
+  setInterval(()=>{ if(CANVAS.on&&(++BACKUP_TICK%6)) return; if(!document.hidden) loadAll().then(()=>{ if(reloadIfNewer()) return; if(SETTINGS.canvasPages===true||CANVAS.on) canvasCheck(); }).catch(()=>{}); },300000);
   /* DATA refresh: re-query visuals on every live embed (visible + warm) */
   const refMin=Math.max(5,(SETTINGS.autoRefreshMinutes||10));
   setInterval(()=>{ Object.values(pbiReports).forEach(r=>{ try{ r.refresh().catch(()=>{});}catch(e){} }); },refMin*60000);

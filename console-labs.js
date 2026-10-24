@@ -70,6 +70,10 @@
   var grid = h("div", { "class": "wallgrid" });
   box.appendChild(grid);
 
+  /* operating rules, shown while wall pages are being set up (checker_figs3b M3): they keep the Free plan budget */
+  box.appendChild(h("div", { style: "margin-top:10px;font-size:14px" },
+    "Rules while wall pages are on: close this console when you are done (it keeps a clock running while open), and do not open the monitoring view (wall.html): it starts 21 more screens."));
+
   document.querySelector(".grid").appendChild(box);
 
   function paintSettings() {
@@ -103,24 +107,42 @@
       acc.textContent = t; acc.style.color = j.connected ? "" : AMBER;
     } catch (e) { acc.textContent = e.message; acc.style.color = AMBER; }
   }
+  /* G4b: browser sign-in (authorization code + PKCE). The server makes the state and keeps the verifier; this page only goes
+     to the Microsoft address the server returns, and later hands back what Microsoft put in the address bar. */
+  var SIGNIN_MSG = { done: "Connected. The figures job can now run.",
+    wrong_account: "That was not the expected account. Nothing was saved. Press Connect again and sign in with the figures account.",
+    expired: "The sign-in took longer than 10 minutes or was already used. Press Connect again.",
+    bad_state: "This sign-in answer does not belong to a sign-in started here (or it was already used). Nothing was saved. Press Connect again.",
+    declined: "The sign-in was cancelled. Nothing was saved. If Microsoft showed \"Need admin approval\" or any error page: STOP, do not grant anything, tell the lead.",
+    needs_admin: "STOP: Microsoft asks for admin approval. Do not grant it. Nothing was saved. Tell the lead.",
+    blocked_by_policy: "STOP: the organisation's sign-in rules refused this sign-in. Nothing was saved. Tell the lead.",
+    needs_secret: "The app's return address is registered under the wrong platform. It must be under Mobile and desktop applications. Nothing was saved.",
+    redirect_not_registered: "The return address is not registered on HMG Wall Reader yet (plan step G4a). Nothing was saved.",
+    not_configured: "The figures account is not set up on the server yet.",
+    refused: "STOP: Microsoft refused this sign-in for this app or account. Nothing was saved. Do not grant anything. Tell the lead.",
+    failed: "The sign-in did not work. Nothing was saved. You may press Connect once more; if it happens again, STOP and tell the lead." };
+  function showSignin(st) { codeLine.textContent = SIGNIN_MSG[st] || SIGNIN_MSG.failed; codeLine.style.color = st === "done" ? "" : AMBER; accStatus(); }
   conn.onclick = async function () {
     try {
       var s = await call("wall-reader-signin", { action: "start" });
-      if (s.state === "not_configured") { codeLine.textContent = "The figures account is not set up on the server yet."; codeLine.style.color = AMBER; return; }
-      codeLine.style.color = AMBER;
-      codeLine.textContent = "On any device, open " + s.verificationUri + " and enter the code " + s.userCode + ", then sign in with the figures account. This box updates by itself.";
-      var until = Date.now() + s.expiresIn * 1000;
-      (function poll() {
-        setTimeout(async function () {
-          var p; try { p = await call("wall-reader-signin", { action: "poll" }); } catch (e) { p = { state: "failed" }; }
-          if (p.state === "waiting" && Date.now() < until) return poll();
-          var msg = { done: "Connected. The figures job can now run.", wrong_account: "That was not the expected account. Nothing was saved. Try again with the figures account.",
-            expired: "The code ran out. Press Connect again.", declined: "The sign-in was cancelled.", none: "No sign-in in progress.", failed: "The sign-in did not work. Press Connect again." }[p.state] || "The sign-in did not work.";
-          codeLine.textContent = msg; codeLine.style.color = p.state === "done" ? "" : AMBER; accStatus();
-        }, (s.interval || 5) * 1000);
-      })();
+      if (s.state) return showSignin(s.state);
+      var u = String(s.authorizeUrl || "");
+      if (u.indexOf("https://login.microsoftonline.com/") !== 0) return showSignin("failed");   /* only ever to Microsoft */
+      codeLine.style.color = ""; codeLine.textContent = "Going to Microsoft. Sign in there with the figures account (within 10 minutes).";
+      location.href = u;
     } catch (e) { codeLine.textContent = e.message; codeLine.style.color = AMBER; }
   };
+  /* back from Microsoft: console.html loads this box for a "wr." state. The address bar is cleaned at once, so the code and
+     state are never kept in it; only the code, the state and Microsoft's error name and number go to the server. */
+  (function signinReturn() {
+    var q = window.WALL_SIGNIN_RETURN || null;
+    if (!q) return;
+    window.WALL_SIGNIN_RETURN = null;
+    codeLine.style.color = ""; codeLine.textContent = "Checking the sign-in...";
+    var body = { action: "callback", state: q.state };
+    if (q.error) { body.error = q.error; body.errorCodes = q.errorCodes; } else body.code = q.code;
+    call("wall-reader-signin", body).then(function (r) { showSignin(r.state); }, function (e) { codeLine.textContent = e.message; codeLine.style.color = AMBER; });
+  })();
   async function paintHealth() {
     var r = await sb.from("screen_health").select("screen,last_seen,state,error_code,clock_offset_ms,clock_rtt_ms,feed_version");
     var rows = (r && r.data) || [];
@@ -130,15 +152,19 @@
       var c = h("div", { "class": "cell", style: "font-size:14px;cursor:default" });
       c.appendChild(h("b", {}, s));
       var age = x ? Math.round((Date.now() - Date.parse(x.last_seen)) / 1000) : null;
-      var line = !x ? "no report" : (age > 180 ? "silent " + Math.round(age / 60) + " min" : (x.state || "seen") + ", clock " + (x.clock_offset_ms == null ? "?" : "ok"));
+      /* screens report with each feed call (every 5 minutes, plus a retry 30 s after a failure): silent only after 11 minutes,
+         that is 2 lost calls in a row (checker_figs2 L4) */
+      var line = !x ? "no report" : (age > 660 ? "silent " + Math.round(age / 60) + " min" : (x.state || "seen") + ", clock " + (x.clock_offset_ms == null ? "?" : "ok"));
       var d = h("div", { style: "font-size:14px" }, line);
-      if (!x || age > 180 || x.state === "stale" || x.error_code) d.style.color = AMBER;
+      if (!x || age > 660 || x.state === "stale" || x.error_code) d.style.color = AMBER;
       c.appendChild(d);
       grid.appendChild(c);
     });
   }
 
   setTimeout(paintSettings, 1500); /* once: never overwrite what the admin is typing */
-  accStatus(); setInterval(accStatus, 60000);
-  paintHealth(); setInterval(paintHealth, 30000);
+  /* while this tab is hidden the two status polls pause (Free plan egress, checker_figs2 M2); they run again when it is shown */
+  /* screens report every 5 minutes and the figures job runs every 15 minutes: health every 2 minutes, figures status every 5 */
+  accStatus(); setInterval(function () { if (!document.hidden) accStatus(); }, 300000);
+  paintHealth(); setInterval(function () { if (!document.hidden) paintHealth(); }, 120000);
 })();
