@@ -242,9 +242,10 @@ async function embedPbi(b,cmd,onRendered){
    warm-up, retries, renewals, reloads) shares one pause: it doubles from 8 s to at most 15 minutes, goes back to nothing
    after a token is given, and is kept in this PC's storage so a reload does not start again at 8 s. While paused, at most
    one token request is in flight; the others wait for it and then see the pause. Every other error (network, busy,
-   re-authorise, wrong account, server error) never starts or extends the pause: it takes exactly the old path (retry after
+   re-authorise, wrong account, server error) never starts or grows the pause: it takes exactly the old path (retry after
    8 s, the old report stays), checker_figs_r4screens R4-H1. A set-up screen is never refused, so it takes exactly the same
-   path and makes exactly the same requests as before. */
+   path and makes exactly the same requests as before. Only while a pause is already running (a PC not set up), such an
+   error starts the same pause again at its current length, so the waiting requests do not all go at once (R5-M1). */
 const TB_KEY="wallTokenBackoff."+SCREEN+(qs.get("mirror")==="1"?".mirror":"");
 let TOKEN_FAILS=(()=>{ try{ const st=safeStorage(); const n=st?parseInt(st.getItem(TB_KEY)||"0",10):0; return (n>=0&&n<=20)?n:0; }catch(e){ return 0; } })();
 let TOKEN_NEXT=0, TOKEN_INFLIGHT=null;
@@ -259,7 +260,7 @@ async function tokenConfig(contentId,fresh){
   if(TOKEN_FAILS&&Date.now()<TOKEN_NEXT) throw new Error("token_backoff");                          /* paused: no request */
   const p=tokenConfigNet(contentId,fresh); TOKEN_INFLIGHT=p;
   try{ const j=await p; tokenWorked(); return j; }
-  catch(e){ if(tokenRefused(e)) tokenFailed(); throw e; }
+  catch(e){ if(tokenRefused(e)) tokenFailed(); else TOKEN_NEXT=Date.now()+Math.min(8000*Math.pow(2,TOKEN_FAILS-1),900000); throw e; }
   finally{ if(TOKEN_INFLIGHT===p) TOKEN_INFLIGHT=null; }
 }
 function show(cmd){
