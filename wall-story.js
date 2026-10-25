@@ -129,18 +129,42 @@
       info.state = view.nodata ? (st.denied ? "denied" : "nodata") : (view.stale ? "stale" : "showing");
     }
 
+    /* performance round (builder_figs_perf.md): the live loop draws at most 30 pictures a second (20 while frames come late),
+       on a grid of the SHARED wall clock, so every screen draws the same instants; each picture is drawn for the end of its
+       grid step (about when it is on screen), and after a slow frame the next one waits for a timer turn so the clock, the
+       figures feed and health can run. Tests and previews (ctx.manual) draw exactly the time they ask for, as before. */
+    var STEP_HI = 1000 / 30, STEP_LO = 50, step = STEP_HI, lastSlot = null, lastDraw = 0, late = 0, onTime = 0, toH = null, ema = 0;
+    function pnow() { return (root.performance && root.performance.now) ? root.performance.now() : Date.now(); }
+    function next(slow) {
+      if (!alive || ctx.manual) return;
+      if (slow) toH = root.setTimeout(function () { toH = null; if (alive) rafH = raf(frame); }, 0); else rafH = raf(frame);
+    }
     function frame() {
       if (!alive || !g) return;
-      var t0 = (root.performance && root.performance.now) ? root.performance.now() : Date.now();
-      if (shown.pendingAt != null && ctx.now() >= shown.pendingAt) check();   /* the switch lands on a frame, not on the 1 s tick */
-      var B = L.bezelPx, w = L.windowFor(screen, B), T = ctx.now() / 1000, cyc = S.cycleLen(), t = ((T % cyc) + cyc) % cyc;
+      var t0 = pnow(), wallMs = ctx.now(), T;
+      if (ctx.manual) T = wallMs / 1000;
+      else {
+        var slot = Math.floor(wallMs / step);
+        if (slot === lastSlot) { rafH = raf(frame); return; }    /* this grid step is drawn already */
+        if (lastDraw) {   /* late frames: 3 in a row drop to 20 a second; 15 s on time goes back to 30 */
+          if (t0 - lastDraw > step * 1.2) { onTime = 0; if (++late >= 3 && step === STEP_HI) { step = STEP_LO; late = 0; slot = Math.floor(wallMs / step); } }
+          else { late = 0; if (step === STEP_LO && ++onTime >= 300) { step = STEP_HI; onTime = 0; slot = Math.floor(wallMs / step); } }
+        }
+        if (lastDraw) ema = ema ? ema * 0.8 + (t0 - lastDraw) * 0.2 : t0 - lastDraw;
+        /* a very slow screen (under 5 pictures a second) refreshes the cached background once a second instead of every 0.25 s,
+           so it is not rebuilt for every picture (whole seconds are on both grids, so neighbours still match) */
+        if (S.PERF) S.PERF.bgq = ema > 200 ? 1 : (ema < 120 ? 0.25 : S.PERF.bgq);
+        lastSlot = slot; lastDraw = t0; T = (slot + 1) * step / 1000;
+      }
+      if (shown.pendingAt != null && wallMs >= shown.pendingAt) check();   /* the switch lands on a frame, not on the 1 s tick */
+      var B = L.bezelPx, w = L.windowFor(screen, B), cyc = S.cycleLen(), t = ((T % cyc) + cyc) % cyc;
       g.setTransform(1, 0, 0, 1, -w.x, -w.y);
       g.save(); g.beginPath(); g.rect(w.x, w.y, L.SCREEN_W, L.SCREEN_H); g.clip();
-      try { S.drawScene(g, t, { B: B, stale: view.stale, nodata: view.nodata, T: T }); } catch (e) { info.err = "DRAW"; }
+      try { S.drawScene(g, t, { B: B, stale: view.stale, nodata: view.nodata, T: T, clip: w }); } catch (e) { info.err = "DRAW"; }
       g.restore(); g.setTransform(1, 0, 0, 1, 0, 0);
-      var dt = ((root.performance && root.performance.now) ? root.performance.now() : Date.now()) - t0;
-      info.frames++; info.msSum += dt; info.last = dt; if (dt > info.msMax) info.msMax = dt;
-      if (!ctx.manual) rafH = raf(frame);
+      var dt = pnow() - t0;
+      info.frames++; info.msSum += dt; info.last = dt; info.lastT = T; info.fps = Math.round(1000 / step); if (dt > info.msMax) info.msMax = dt;
+      next(dt > 40);
     }
 
     container.appendChild(rootEl);
@@ -150,12 +174,13 @@
     if (ctx.manual) frame(); else rafH = raf(frame);
     var view0 = {
       info: function () { return { frames: info.frames, msMean: info.frames ? info.msSum / info.frames : 0, msMax: info.msMax, msLast: info.last, applied: info.applied,
-        version: info.version, builds: info.builds, appliedAt: info.appliedAt, state: info.state, err: info.err || null, tilesSkipped: 0 }; },
+        version: info.version, builds: info.builds, appliedAt: info.appliedAt, state: info.state, err: info.err || null, tilesSkipped: 0, lastT: info.lastT, fps: info.fps }; },
       refresh: check,
       frame: frame,
       destroy: function () {
         alive = false;
         try { if (rafH !== null) caf(rafH); } catch (e) { }
+        try { if (toH !== null) root.clearTimeout(toH); } catch (e) { }
         try { if (ivH !== null) clrIv(ivH); } catch (e) { }
         try { if (typeof offFeed === "function") offFeed(); } catch (e) { }
         try { container.removeChild(rootEl); } catch (e) { }

@@ -39,7 +39,10 @@
   function seeded(s) { return function () { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; }; }
 
   var C = { B: 0, W: 0, H: 0, stale: false, nodata: false, longNames: false, T: 0 };
-  function win(id) { return L.windowFor(id, C.B); }
+  var CLIP = null, WINC = {}, WINB = null, FONTK = "", MW = new Map();   /* PERF (wall copy only): see src\wall21\port\perf_patches.js */
+  function win(id) { if (WINB !== C.B) { WINC = {}; WINB = C.B; } var w = WINC[id]; if (!w) { w = L.windowFor(id, C.B); WINC[id] = w; } return w; }
+  function vis(x, y, w, h) { return !CLIP || (x < CLIP.x + CLIP.w && x + w > CLIP.x && y < CLIP.y + CLIP.h && y + h > CLIP.y); }
+  function mw(g, s) { var k = FONTK + "|" + s, v = MW.get(k); if (v === undefined) { v = g.measureText(s).width; if (MW.size > 20000) MW.clear(); MW.set(k, v); } return v; }
   function at(id, x, y) { var w = win(id); return [w.x + x, w.y + y]; }
   function screenOf(x, y) {
     var B = C.B, c = Math.floor(x / (SW + B)), r = Math.floor(y / (SH + B));
@@ -52,16 +55,16 @@
   function nm(s) { return C.longNames && typeof s === "string" && s.length > 2 && !/^[\d,.% ]+$/.test(s) && s.length < 40 && /^[A-Z]/.test(s) && /\b(Hospital|Center|Medical|Riyadh|Jeddah|Makkah)\b/.test(s) ? s + " General Hospital and Medical Centre" : s; }
 
   /* ---------- text: always inside ONE screen's safe area ---------- */
-  function setFont(g, px, w) { g.font = (w || 400) + " " + px + "px " + FONT; }
+  function setFont(g, px, w) { FONTK = (w || 400) + " " + px + "px " + FONT; g.font = FONTK; }
   function T(g, s, x, y, px, o) {
     o = o || {}; var w = o.w || 400;
     if (s === null || s === undefined || s === "") return null;
     s = String(s);
     setFont(g, px, w);
     var maxW = Math.min(o.maxW || 1e9, SW - 2 * SAFE), min = o.min || Math.max(36, Math.round(px * 0.6));
-    var wd = g.measureText(s).width;
-    while (wd > maxW && px > min) { px -= 2; setFont(g, px, w); wd = g.measureText(s).width; }
-    if (wd > maxW) { while (s.length > 4 && g.measureText(s + "...").width > maxW) s = s.slice(0, -1); s = s + "..."; wd = g.measureText(s).width; }
+    var wd = mw(g, s);
+    while (wd > maxW && px > min) { px -= 2; setFont(g, px, w); wd = mw(g, s); }
+    if (wd > maxW) { while (s.length > 4 && mw(g, s + "...") > maxW) s = s.slice(0, -1); s = s + "..."; wd = mw(g, s); }
     var a = o.a || "left", left = a === "center" ? x - wd / 2 : (a === "right" ? x - wd : x);
     var top = y - px * 0.95, h = px * 1.25;
     var sc = screenOf(left + wd / 2, top + h / 2);
@@ -73,7 +76,7 @@
     stats.texts++; if (stats.drawn) stats.drawn.add(s);
     if (o.key) { stats.keyed++; if (FRAMEKEYS.has(o.key)) { stats.dupKeys++; if (stats.dupWhere.length < 8) stats.dupWhere.push(o.key); } else FRAMEKEYS.add(o.key); }
     var ga = g.globalAlpha; g.globalAlpha = ga * (o.al === undefined ? 1 : o.al);
-    if (g.globalAlpha > 0.003) {
+    if (g.globalAlpha > 0.003 && vis(nl - wd * 0.1 - px, nt - px, wd * 1.2 + 2 * px, h + 2 * px)) {
       if (o.glow) { g.globalCompositeOperation = "lighter"; g.globalAlpha *= 0.35; g.drawImage(sprite(o.glow), nl - wd * 0.08, nt - h * 0.25, wd * 1.16, h * 1.5); g.globalAlpha = ga * (o.al === undefined ? 1 : o.al); g.globalCompositeOperation = "source-over"; }
       g.fillStyle = o.c || INK; g.textAlign = "left"; g.textBaseline = "alphabetic";
       g.fillText(s, nl, nt + px * 0.95);
@@ -83,7 +86,7 @@
   }
   function wrap(g, s, maxW, px, w) {
     setFont(g, px, w); var words = String(s).split(" "), lines = [], cur = "";
-    words.forEach(function (wd) { var t = cur ? cur + " " + wd : wd; if (g.measureText(t).width > maxW && cur) { lines.push(cur); cur = wd; } else cur = t; });
+    words.forEach(function (wd) { var t = cur ? cur + " " + wd : wd; if (mw(g, t) > maxW && cur) { lines.push(cur); cur = wd; } else cur = t; });
     if (cur) lines.push(cur); return lines;
   }
   function rrect(g, x, y, w, h, r) {
@@ -110,7 +113,7 @@
     gr.addColorStop(0.45, hexA(col, 0.22)); gr.addColorStop(1, hexA(col, 0));
     x.fillStyle = gr; x.fillRect(0, 0, 128, 128); spr[col] = c; return c;
   }
-  function glow(g, col, x, y, r, a) { if (a <= 0.003 || r <= 0) return; var ga = g.globalAlpha; g.globalAlpha = Math.min(1, a); g.drawImage(sprite(col), x - r, y - r, 2 * r, 2 * r); g.globalAlpha = ga; }
+  function glow(g, col, x, y, r, a) { if (a <= 0.003 || r <= 0 || !vis(x - r, y - r, 2 * r, 2 * r)) return; var ga = g.globalAlpha; g.globalAlpha = Math.min(1, a); g.drawImage(sprite(col), x - r, y - r, 2 * r, 2 * r); g.globalAlpha = ga; }
   function dot(g, x, y, r, col, a) { if (r <= 0) return; g.globalAlpha = clamp(a, 0, 1); g.beginPath(); g.arc(x, y, r, 0, 6.2832); g.fillStyle = col; g.fill(); g.globalAlpha = 1; }
   /* a comet: bright head with a fading tail along a path function f(t) -> [x,y] */
   function comet(g, path, t, len, col, a, size) {
@@ -176,17 +179,31 @@
 
   /* ---------- background: deep gradient, drifting nebula, twinkling stars ---------- */
   var STARS = (function () { var r = seeded(3), a = []; for (var i = 0; i < 520; i++) a.push([r(), r(), 0.6 + r() * 2.2, r() * 6.28, 0.3 + r() * 0.7]); return a; })();
-  function background(g) {
+  /* PERF: on the wall the deep gradient and the slowly drifting nebula are drawn once per PERF.bgq s of wall time (the same
+     instants on every screen) into a screen-size image and copied; the stars are still drawn for every picture. PERF.bgq 0:
+     drawn every picture as in the approved engine. */
+  var PERF = { bgq: 0.25, bgBuilds: 0 }, BGC = { c: null, g: null, key: null };
+  function bgLayer(g, t) {
     var c = coreAt(), gr = g.createRadialGradient(c.x, c.y, 0, c.x, c.y, C.W * 0.55);
     gr.addColorStop(0, "#1c1030"); gr.addColorStop(0.35, "#0e0819"); gr.addColorStop(1, "#04020a");
     g.fillStyle = gr; g.fillRect(0, 0, C.W, C.H);
     g.globalCompositeOperation = "lighter";
-    var t = C.stale ? 0 : C.T;
     glow(g, "#3a1d5c", C.W * (0.3 + 0.03 * Math.sin(t * 0.05)), C.H * 0.35, 2600, 0.22);
     glow(g, "#1a2f55", C.W * (0.72 + 0.03 * Math.cos(t * 0.04)), C.H * 0.62, 2400, 0.20);
     glow(g, "#4a1f4f", C.W * 0.5, C.H * (0.9 + 0.05 * Math.sin(t * 0.03)), 2000, 0.16);
+  }
+  function background(g) {
+    var t = C.stale ? 0 : C.T;
+    if (CLIP && PERF.bgq > 0 && g.canvas && g.canvas.width === CLIP.w && g.canvas.height === CLIP.h && typeof document !== "undefined") {
+      var tq = Math.floor(t / PERF.bgq) * PERF.bgq, key = tq + "|" + C.W + "|" + C.H + "|" + CLIP.x + "|" + CLIP.y;
+      if (!BGC.c) { BGC.c = document.createElement("canvas"); BGC.c.width = CLIP.w; BGC.c.height = CLIP.h; BGC.g = BGC.c.getContext("2d"); }
+      if (BGC.key !== key) { var x = BGC.g; x.setTransform(1, 0, 0, 1, -CLIP.x, -CLIP.y); x.globalCompositeOperation = "source-over"; x.globalAlpha = 1; bgLayer(x, tq); BGC.key = key; PERF.bgBuilds++; }
+      g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = "source-over"; g.globalAlpha = 1; g.drawImage(BGC.c, 0, 0); g.restore();
+      g.globalCompositeOperation = "lighter";
+    } else bgLayer(g, t);
     for (var i = 0; i < STARS.length; i++) {
       var s = STARS[i], x = ((s[0] * C.W + t * 6 * s[4]) % C.W), y = s[1] * C.H, a = 0.25 + 0.35 * Math.sin(t * 1.3 * s[4] + s[3]) * s[4];
+      if (!vis(x, y, s[2] * 2, s[2] * 2)) continue;
       g.fillStyle = "rgba(230,220,255," + clamp(a, 0.05, 0.7) + ")"; g.fillRect(x, y, s[2] * 2, s[2] * 2);
     }
     g.globalCompositeOperation = "source-over";
@@ -200,10 +217,11 @@
   /* the core now lives inside ONE screen (R2C4), so even "FTM" formed from its points never crosses a bezel */
   var CORE_SC = 1;
   function coreAt() { var w = win("R2C4"); return { x: w.x + SW / 2, y: w.y + 520, R: 560 * CORE_SC }; }
+  var RA = [NaN, NaN, 0, 0, 0, 0];
   function rot(p, ax, ay) {
     var x = p[0], y = p[1], z = p[2], c, s, t;
-    c = Math.cos(ax); s = Math.sin(ax); t = y * c - z * s; z = y * s + z * c; y = t;
-    c = Math.cos(ay); s = Math.sin(ay); t = x * c + z * s; z = -x * s + z * c; x = t;
+    if (ax !== RA[0]) { RA[0] = ax; RA[2] = Math.cos(ax); RA[3] = Math.sin(ax); } c = RA[2]; s = RA[3]; t = y * c - z * s; z = y * s + z * c; y = t;
+    if (ay !== RA[1]) { RA[1] = ay; RA[4] = Math.cos(ay); RA[5] = Math.sin(ay); } c = RA[4]; s = RA[5]; t = x * c + z * s; z = -x * s + z * c; x = t;
     return [x, y, z];
   }
 
@@ -306,7 +324,7 @@
       }
       a *= av; if (a <= 0.01) continue;
       sz = clamp(sz, 3, 14);
-      g.globalAlpha = a; g.fillStyle = col; g.fillRect(x - sz / 2, y - sz / 2, sz, sz);
+      if (vis(x - sz / 2, y - sz / 2, sz, sz)) { g.globalAlpha = a; g.fillStyle = col; g.fillRect(x - sz / 2, y - sz / 2, sz, sz); }
       if (i % 19 === 0) { g.globalAlpha = 1; glow(g, col, x, y, 30 + sz * 2, a * 0.6); }
     }
     g.globalAlpha = 1; g.globalCompositeOperation = "source-over";
@@ -327,6 +345,7 @@
     var w = win(id), d = deptOf(id) || st.dept || "fm", x0 = w.x, y0 = w.y, a = st.a;
     st.age = C.T - REFRESH.t;
     if (a <= 0.01 || !p) return;
+    if (!vis(x0 - 200, y0 - 200, SW + 400, SH + 460) && (C.stale || st.age >= 2.6)) return;
     var ga = g.globalAlpha; g.globalAlpha = a;
     var lift = (1 - ease(st.enter === undefined ? 1 : st.enter)) * 60;
     y0 += lift;
@@ -454,6 +473,7 @@
   function caption(g, cap, st, story) {
     var w = win(cap.screen), x = w.x + cap.x - (1 - easeOut(st.enter)) * 120, y = w.y + cap.y, cw = cap.w, ch = cap.h, a = st.a;
     if (a <= 0.01) return;
+    if (!vis(w.x - 200, w.y - 200, SW + 400, SH + 400)) return;
     var ga = g.globalAlpha; g.globalAlpha = a;
     x = clamp(x, w.x + 20, w.x + SW - cw - 20);
     glass(g, x, y, cw, ch, C.stale ? AMBER : COL[story.dept], 0.6, a);
@@ -547,7 +567,7 @@
   }
   function sweep(g, f, col) {   /* a soft vertical band of light crossing the whole wall (f 0..1) */
     if (f <= 0 || f >= 1 || C.stale) return;
-    var x = lerp(-1500, C.W + 1500, f), gr = g.createLinearGradient(x - 1200, 0, x + 1200, 0);
+    var x = lerp(-1500, C.W + 1500, f); if (!vis(x - 1200, 0, 2400, C.H)) return; var gr = g.createLinearGradient(x - 1200, 0, x + 1200, 0);
     gr.addColorStop(0, hexA(col, 0)); gr.addColorStop(0.5, hexA(col, 0.16 * Math.sin(f * Math.PI))); gr.addColorStop(1, hexA(col, 0));
     g.globalCompositeOperation = "lighter"; g.fillStyle = gr; g.fillRect(x - 1200, 0, 2400, C.H); g.globalCompositeOperation = "source-over";
   }
@@ -601,7 +621,7 @@
 
   function drawScene(g, t, o) {
     C.B = o.B; var cs = L.canvasSize(o.B); C.W = cs.w; C.H = cs.h; C.stale = !!o.stale; C.nodata = !!o.nodata; C.longNames = !!o.longNames;
-    C.T = o.T === undefined ? t : o.T; FRAMEKEYS = new Set();
+    C.T = o.T === undefined ? t : o.T; FRAMEKEYS = new Set(); CLIP = o.clip || null;
     g.globalCompositeOperation = "source-over"; g.globalAlpha = 1;
     background(g);
     var sg = segAt(t), all = Object.keys(HOME);
@@ -779,7 +799,7 @@
   }
 
   window.Story5d = {
-    drawScene: drawScene, cycleLen: cycleLen, loadMarks: loadMarks, MARKS: MARKS, REFRESH: REFRESH,
+    drawScene: drawScene, cycleLen: cycleLen, loadMarks: loadMarks, MARKS: MARKS, REFRESH: REFRESH, PERF: PERF,
     reset: function () { STORIES.length = 0; Object.keys(HOME).forEach(function (k) { delete HOME[k]; }); anchorCache = {}; },
     run: run, refresh: function () { REFRESH.t = C.T; }, add: function (s) { STORIES.push(s); }, cfg: CFG, HOME: HOME, drawMark: drawMark, kpiState: kpiState, setOutline: function (o) { OUTLINE = o || []; },
     C: C, COL: COL, LIGHT: LIGHT, NAME: NAME, AMBER: AMBER, INK: INK, INK2: INK2, BRAND: BRAND, NODATA_TXT: NODATA_TXT,
