@@ -25,6 +25,7 @@
     var WINDOW_MS = opt.windowMs || 1800000;     /* samples kept for 30 minutes */
     var W_POW = opt.weightPow || 2, W_ADD = opt.weightAdd || 20; /* how strongly a low round trip counts */
     var MAX_DRIFT = 500e-6;                      /* a PC clock is never trusted to be off by more than 500 ppm */
+    var MAX_RTT = opt.maxRttMs || 2000;          /* a round trip over 2 s was handled late by a busy page, not by the network */
     var base = dateNow() - perfNow();
     var hist = [], pend = [], model = null, disp = 0, lastP = 0, synced = false;
     var last = { rtt: null, samples: 0, failures: 0, trusted: 0, fallbackSkipped: 0, bySource: { main: 0, fallback: 0 } };
@@ -36,6 +37,8 @@
     function fit() {
       var p = perfNow(), w = [], i;
       for (i = 0; i < hist.length; i++) if (p - hist[i].p <= WINDOW_MS) w.push(hist[i]);
+      /* while no sample in the window is under MAX_RTT, keep the last trusted ones (builder_lag_diag option 2, perf round) */
+      if (!w.some(function (x) { return x.rtt <= MAX_RTT; })) { for (i = 0; i < hist.length; i++) if (hist[i].rtt <= MAX_RTT && w.indexOf(hist[i]) < 0) w.push(hist[i]); }
       hist = w;
       if (!w.length) return;
       /* weighted straight line: a sample counts less the further its round trip is above the smallest;
@@ -126,9 +129,10 @@
         } else if (calm.length) pend = [];
         keep = calm;
       }
+      keep = keep.filter(function (s) { return s.rtt <= MAX_RTT; });   /* such a sample can be wrong by half its round trip: never fitted */
       for (i = 0; i < keep.length; i++) hist.push(keep[i]);
       fit();
-      if (!synced) { lastP = perfNow(); disp = predict(lastP); synced = true; }
+      if (!synced && model) { lastP = perfNow(); disp = predict(lastP); synced = true; }   /* not synced on slow samples only */
       return true;
     }
     function start() {
