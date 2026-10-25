@@ -133,6 +133,7 @@
        on a grid of the SHARED wall clock, so every screen draws the same instants; each picture is drawn for the end of its
        grid step (about when it is on screen), and after a slow frame the next one waits for a timer turn so the clock, the
        figures feed and health can run. Tests and previews (ctx.manual) draw exactly the time they ask for, as before. */
+    var bufEl = null; try { for (var pe = container; pe && !bufEl; pe = pe.parentNode) if (pe.classList && pe.classList.contains("buf")) bufEl = pe; } catch (e) { bufEl = null; }   /* the player's buffer, if any */
     var STEP_HI = 1000 / 30, STEP_LO = 50, step = STEP_HI, lastSlot = null, lastDraw = 0, late = 0, onTime = 0, toH = null, ema = 0;
     function pnow() { return (root.performance && root.performance.now) ? root.performance.now() : Date.now(); }
     function next(slow) {
@@ -141,6 +142,8 @@
     }
     function frame() {
       if (!alive || !g) return;
+      /* r2 (checker PERF-L1): a story mounted early in the hidden buffer (the player's warm-up) does not draw until its buffer is in front */
+      if (!ctx.manual && bufEl && !(bufEl.classList && bufEl.classList.contains("front"))) { rafH = raf(frame); return; }
       var t0 = pnow(), wallMs = ctx.now(), T;
       if (ctx.manual) T = wallMs / 1000;
       else {
