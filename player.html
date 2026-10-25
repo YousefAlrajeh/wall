@@ -164,7 +164,7 @@ function finalizeSwap(cmd,g,inc,out){
   inc.style.zIndex=""; out.style.zIndex="";
   inc.style.transition=""; out.style.transition="";
   swapRefs(); currentUrl=cmd.url; hideBoot(); WHY="";
-  if(CANVAS.on&&(back.wpView||(cmd.wallpage&&!pbiReports[back.id]))) cleanBuf(back);   /* switch on only (builder_figs_perf.md r2): a wall page swapped out, or a non-report page under one, is unloaded, not left drawing at opacity 0; a report stays warm as before */
+  if(CANVAS.on&&back.wpView) cleanBuf(back);   /* switch on only (builder_figs_perf.md r3): a wall page swapped out is unloaded, not left drawing at opacity 0; a page under a wall page stays loaded as before */
 }
 function runEffect(cmd,g){
   if(g!==gen) return;
